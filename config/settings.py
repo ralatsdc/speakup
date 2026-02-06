@@ -12,6 +12,8 @@ https://docs.djangoproject.com/en/4.2/ref/settings/
 
 from pathlib import Path
 
+from import_export.formats.base_formats import CSV
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -39,6 +41,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     # Third party
     "django_htmx",
+    'import_export',
     # Local Apps (The SpeakUp Architecture)
     "core",
     "members",
@@ -139,3 +142,6 @@ STATIC_URL = "static/"
 # https://docs.djangoproject.com/en/4.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# Ensure CSV is the default import and export format
+IMPORT_EXPORT_FORMATS = [CSV]
