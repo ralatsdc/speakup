@@ -1,0 +1,4 @@
+django
+django-htmx
+psycopg2-binary
+python-dotenv
