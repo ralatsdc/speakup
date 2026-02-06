@@ -1,0 +1,11 @@
+<div class="col-6 col-lg-4" id="member-btn-{{ member.id }}">
+    <button 
+        class="btn w-100 py-3 {% if is_present %}btn-success{% else %}btn-outline-secondary{% endif %}"
+        hx-post="{% url 'checkin_member' meeting.id member.id %}"
+        hx-target="#member-btn-{{ member.id }}"
+        hx-swap="outerHTML"
+    >
+        <span class="fw-bold">{{ member.first_name }} {{ member.last_name }}</span>
+        {% if is_present %} ✓{% endif %}
+    </button>
+</div>

@@ -53,3 +53,23 @@ class MeetingRole(models.Model):
     def __str__(self):
         assigned = self.user.username if self.user else "OPEN"
         return f"{self.meeting} - {self.role}: {assigned}"
+
+
+class Attendance(models.Model):
+    meeting = models.ForeignKey(
+        Meeting, on_delete=models.CASCADE, related_name="attendances"
+    )
+    # Link to a member...
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True
+    )
+    # ...OR store guest details
+    guest_name = models.CharField(max_length=100, blank=True)
+    guest_email = models.EmailField(blank=True)
+
+    timestamp = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        if self.user:
+            return f"{self.user} @ {self.meeting}"
+        return f"{self.guest_name} (Guest) @ {self.meeting}"

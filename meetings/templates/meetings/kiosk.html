@@ -1,0 +1,67 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="row">
+    <!-- Header -->
+    <div class="col-12 text-center mb-4">
+        {% if meeting %}
+            <h1 class="display-5">Check In: {{ meeting.date|date:"F jS" }}</h1>
+            <p class="text-muted">Welcome to Toastmasters! Please find your name or sign in as a guest.</p>
+        {% else %}
+            <div class="alert alert-warning">No meeting found scheduled for today.</div>
+        {% endif %}
+    </div>
+</div>
+
+{% if meeting %}
+<div class="row">
+    <!-- LEFT: Member Quick Check-in -->
+    <div class="col-md-8">
+        <div class="card shadow-sm h-100">
+            <div class="card-header bg-primary text-white">
+                <h3 class="h5 m-0">Member Check-In</h3>
+            </div>
+            <div class="card-body">
+                <div class="row g-2">
+                    {% for member in members %}
+                        {# We check the condition here, then pass the result to the include #}
+                        {% if member.id in checked_in_ids %}
+                            {% include 'meetings/partials/checkin_button.html' with is_present=True %}
+                        {% else %}
+                            {% include 'meetings/partials/checkin_button.html' with is_present=False %}
+                        {% endif %}
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- RIGHT: Guest Form -->
+    <div class="col-md-4">
+        <div class="card shadow-sm border-success h-100">
+            <div class="card-header bg-success text-white">
+                <h3 class="h5 m-0">Guest Sign-In</h3>
+            </div>
+            <div class="card-body">
+                <div id="guest-form-container">
+                    <form hx-post="{% url 'checkin_guest' meeting.id %}" 
+                          hx-target="#guest-form-container" 
+                          hx-swap="innerHTML">
+                        {% csrf_token %}
+                        <div class="mb-3">
+                            <label class="form-label">Full Name</label>
+                            <input type="text" name="guest_name" class="form-control form-control-lg" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Email Address</label>
+                            <input type="email" name="guest_email" class="form-control form-control-lg" required>
+                        </div>
+                        <button type="submit" class="btn btn-success w-100 btn-lg">I'm here!</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
