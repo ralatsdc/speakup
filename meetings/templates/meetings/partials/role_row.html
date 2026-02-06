@@ -1,0 +1,45 @@
+<!-- meetings/templates/meetings/partials/role_row.html -->
+<tr id="role-row-{{ assignment.id }}">
+    <!-- Column 1: Role Name -->
+    <td class="fw-bold align-middle">{{ assignment.role.name }}</td>
+    
+    <!-- Column 2: Member / Button -->
+    <td class="align-middle">
+        {% if assignment.user %}
+            {% if assignment.user == user %}
+                <!-- It's ME: Show Drop Button -->
+                <span class="text-success fw-bold me-2">You</span>
+                <button class="btn btn-sm btn-outline-danger"
+                        hx-post="{% url 'toggle_role' assignment.id %}"
+                        hx-target="#role-row-{{ assignment.id }}"
+                        hx-swap="outerHTML">
+                    Drop Role
+                </button>
+            {% else %}
+                <!-- It's someone else: Show Name -->
+                {{ assignment.user.first_name }} {{ assignment.user.last_name }}
+            {% endif %}
+        {% else %}
+            <!-- It's Open: Show Sign Up Button -->
+            {% if user.is_authenticated %}
+                <button class="btn btn-sm btn-primary"
+                        hx-post="{% url 'toggle_role' assignment.id %}"
+                        hx-target="#role-row-{{ assignment.id }}"
+                        hx-swap="outerHTML">
+                    Sign Up
+                </button>
+            {% else %}
+                <span class="text-muted fst-italic">-- Open --</span>
+            {% endif %}
+        {% endif %}
+    </td>
+
+    <!-- Column 3: Status Badge -->
+    <td class="align-middle">
+        {% if assignment.user %}
+            <span class="badge bg-success">Filled</span>
+        {% else %}
+            <span class="badge bg-warning text-dark">Needed</span>
+        {% endif %}
+    </td>
+</tr>
