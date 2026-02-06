@@ -1,5 +1,9 @@
-from django.contrib import admin
+from django.contrib import admin, messages
+from django.contrib.auth import get_user_model
+from django.utils.crypto import get_random_string
 from .models import Meeting, Role, MeetingRole, MeetingType, Attendance
+
+User = get_user_model()
 
 
 # 1. Setup the Role Admin
@@ -50,3 +54,78 @@ class MeetingAdmin(admin.ModelAdmin):
 class MeetingRoleAdmin(admin.ModelAdmin):
     list_display = ("meeting", "role", "user")
     list_filter = ("meeting", "role")
+
+
+@admin.register(Attendance)
+class AttendanceAdmin(admin.ModelAdmin):
+    list_display = ("meeting", "who_attended", "guest_email", "timestamp")
+    list_filter = ("meeting", ("user", admin.EmptyFieldListFilter))
+    search_fields = ("guest_name", "guest_email")
+    actions = ["convert_guest_to_user"]  # Enable the action
+
+    @admin.action(description="Convert selected guests to Users")
+    def convert_guest_to_user(self, request, queryset):
+        created_count = 0
+        existing_count = 0
+
+        for attendance in queryset:
+            # Skip if already linked to a user
+            if attendance.user:
+                continue
+
+            # Skip if no email provided
+            if not attendance.guest_email:
+                continue
+
+            email = attendance.guest_email.strip().lower()
+            name_parts = attendance.guest_name.strip().split(" ", 1)
+            first_name = name_parts[0]
+            last_name = name_parts[1] if len(name_parts) > 1 else ""
+
+            # Check if user already exists (by email)
+            if User.objects.filter(email=email).exists():
+                # Just link the existing user to this attendance record
+                user = User.objects.get(email=email)
+                attendance.user = user
+                attendance.save()
+                existing_count += 1
+            else:
+                # Create new User
+                # Username strategy: use email part or first.last
+                username = email.split("@")[0]
+
+                # Ensure username uniqueness
+                counter = 1
+                base_username = username
+                while User.objects.filter(username=username).exists():
+                    username = f"{base_username}{counter}"
+                    counter += 1
+
+                # Generate a temp password
+                temp_password = "Welcome123!"
+
+                new_user = User.objects.create_user(
+                    username=username,
+                    email=email,
+                    password=temp_password,
+                    first_name=first_name,
+                    last_name=last_name,
+                    is_guest=True,  # Mark as Guest in your custom field
+                )
+
+                # Link the attendance record to the new user
+                attendance.user = new_user
+                attendance.save()
+                created_count += 1
+
+        self.message_user(
+            request,
+            f"Successfully created {created_count} new users and linked {existing_count} existing users. "
+            f"Default password is 'Welcome123!'",
+            messages.SUCCESS,
+        )
+
+    def who_attended(self, obj):
+        if obj.user:
+            return f"{obj.user.first_name} {obj.user.last_name} ({'Member' if not obj.user.is_guest else 'Guest User'})"
+        return f"{obj.guest_name} (Walk-in)"
