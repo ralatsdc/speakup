@@ -1,3 +1,5 @@
+import json  # Add this import at the top
+
 from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
 from django.http import HttpResponseForbidden
@@ -39,14 +41,39 @@ def toggle_role(request, role_id):
     """
     assignment = get_object_or_404(MeetingRole, id=role_id)
 
-    # Logic:
+    # 1. DROP ROLE (Always allowed if it's you)
     # 1. If I am already assigned, I am clicking to DROP it.
     if assignment.user == request.user:
         assignment.user = None
         assignment.save()
 
-    # 2. If nobody is assigned, I am clicking to CLAIM it.
+    # 2. CLAIM ROLE (Logic update here)
     elif assignment.user is None:
+
+        # A. Check for existing roles in this specific meeting
+        has_existing_role = MeetingRole.objects.filter(
+            meeting=assignment.meeting, user=request.user
+        ).exists()
+
+        # B. Define who can bypass this rule (Officers + Superusers)
+        can_bypass = request.user.is_officer or request.user.is_superuser
+
+        # C. Enforce the limit
+        if has_existing_role and not can_bypass:
+            # Render the row EXACTLY as it is (don't update it)
+            response = render(
+                request, "meetings/partials/role_row.html", {"assignment": assignment}
+            )
+
+            # Send a specific signal to the frontend to show an alert
+            response["HX-Trigger"] = json.dumps(
+                {
+                    "showAlert": "You have already signed up for a role for this meeting. Please drop your current role first."
+                }
+            )
+            return response
+
+        # If pass, save the assignment
         assignment.user = request.user
         assignment.save()
 

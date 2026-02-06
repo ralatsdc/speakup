@@ -1,4 +1,4 @@
-g<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -15,10 +15,20 @@ g<!DOCTYPE html>
             <a class="navbar-brand" href="{% url 'upcoming_meetings' %}">SpeakUp 🎤</a>
             <div class="navbar-nav ms-auto">
                 {% if user.is_authenticated %}
-                    <span class="nav-link text-white">Hello, {{ user.username }}</span>
-                    <a class="nav-link" href="/admin/">Admin</a>
+                    <span class="nav-link text-white">Hello, {{ user.first_name|default:user.username }}</span>
+                    
+                    <!-- Only show this link if they are allowed to go there! -->
+                    {% if user.is_staff %}
+                        <a class="nav-link" href="/admin/">Admin</a>
+                    {% endif %}
+                    
+                    <!-- Add a logout button -->
+                    <form action="{% url 'logout' %}" method="post" class="d-inline">
+                        {% csrf_token %}
+                        <button class="btn nav-link" type="submit">Logout</button>
+                    </form>
                 {% else %}
-                    <a class="nav-link" href="/admin/">Login</a>
+                    <a class="nav-link" href="{% url 'login' %}">Login</a>
                 {% endif %}
             </div>
         </div>
@@ -28,5 +38,11 @@ g<!DOCTYPE html>
         <!-- Child templates inject content here -->
         {% endblock %}
     </div>
+    <!-- NEW: Listener for HTMX events -->
+    <script>
+        document.body.addEventListener("showAlert", function(evt){
+            alert(evt.detail.value);
+        });
+    </script>
 </body>
 </html>
