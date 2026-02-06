@@ -22,7 +22,13 @@ class User(AbstractUser):
         "self", null=True, blank=True, on_delete=models.SET_NULL, related_name="mentees"
     )
 
+    @property
+    def status_label(self):
+        if self.is_guest:
+            return "Guest"
+        return "Member"
+
     def __str__(self):
         return (
-            f"{self.first_name} {self.last_name}" if self.first_name else self.username
+            f"{self.first_name}" if self.first_name else self.username
         )
