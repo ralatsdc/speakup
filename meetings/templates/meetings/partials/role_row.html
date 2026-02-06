@@ -7,8 +7,21 @@
     <td class="align-middle">
         {% if assignment.user %}
             {% if assignment.user == user %}
-                <!-- It's ME: Show Drop Button -->
+                <!-- It's ME -->
                 <span class="text-success fw-bold me-2">You</span>
+
+                <!-- NEW: Show my status if I am a guest
+                {% if user.is_guest %}
+                    <span class="badge rounded-pill bg-info text-dark me-2">Guest</span>
+                {% endif %} -->
+                <!-- Or, distinguish "Member" vs "Officer" vs "Guest" -->
+                {% if assignment.user.is_guest %}
+                    <span class="badge bg-info text-dark ms-1">Guest</span>
+                {% elif assignment.user.is_officer %}
+                    <span class="badge bg-warning text-dark ms-1">Officer</span>
+                {% else %}
+                    <span class="badge bg-light text-dark border ms-1">Member</span>
+                {% endif %}
                 <button class="btn btn-sm btn-outline-danger"
                         hx-post="{% url 'toggle_role' assignment.id %}"
                         hx-target="#role-row-{{ assignment.id }}"
@@ -16,8 +29,21 @@
                     Drop Role
                 </button>
             {% else %}
-                <!-- It's someone else: Show Name -->
+                <!-- It's someone else -->
                 {{ assignment.user.first_name }} {{ assignment.user.last_name }}
+
+                <!-- NEW: Show Guest Badge for others
+                {% if assignment.user.is_guest %}
+                    <span class="badge rounded-pill bg-info text-dark ms-1">Guest</span>
+                {% endif %} -->
+                <!-- Or, distinguish "Member" vs "Officer" vs "Guest" -->
+                {% if assignment.user.is_guest %}
+                    <span class="badge bg-info text-dark ms-1">Guest</span>
+                {% elif assignment.user.is_officer %}
+                    <span class="badge bg-warning text-dark ms-1">Officer</span>
+                {% else %}
+                    <span class="badge bg-light text-dark border ms-1">Member</span>
+                {% endif %}
             {% endif %}
         {% else %}
             <!-- It's Open: Show Sign Up Button -->
