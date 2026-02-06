@@ -1,7 +1,10 @@
 from django.db import models
 from django.conf import settings
+from django.db.models.signals import post_save  # Import signals
+from django.dispatch import receiver
 
 
+# 2. Existing Role Model (No changes needed)
 class Role(models.Model):
     name = models.CharField(max_length=100)  # e.g., Toastmaster, Timer, Ah-Counter
     is_speech_role = models.BooleanField(default=False)
@@ -11,7 +14,20 @@ class Role(models.Model):
         return self.name
 
 
+# 1. New Model: Defines the template
+class MeetingType(models.Model):
+    name = models.CharField(max_length=100)  # e.g., "Regular Meeting"
+    default_roles = models.ManyToManyField(Role, related_name="meeting_types")
+
+    def __str__(self):
+        return self.name
+
+
+# 3. Update Meeting Model: Add the link
 class Meeting(models.Model):
+    meeting_type = models.ForeignKey(
+        MeetingType, on_delete=models.SET_NULL, null=True, blank=True
+    )
     date = models.DateTimeField()
     theme = models.CharField(max_length=200, blank=True)
     word_of_the_day = models.CharField(max_length=50, blank=True)
@@ -20,7 +36,7 @@ class Meeting(models.Model):
     zoom_link = models.URLField(blank=True)
 
     def __str__(self):
-        return f"Meeting on {self.date.strftime('%Y-%m-%d')}"
+        return f"{self.date.strftime('%Y-%m-%d')} ({self.meeting_type})"
 
 
 class MeetingRole(models.Model):
@@ -73,3 +89,16 @@ class Attendance(models.Model):
         if self.user:
             return f"{self.user} @ {self.meeting}"
         return f"{self.guest_name} (Guest) @ {self.meeting}"
+
+
+# 4. The Automation Signal
+# This function runs every time you hit "Save" on a Meeting
+@receiver(post_save, sender=Meeting)
+def populate_meeting_roles(sender, instance, created, **kwargs):
+    if created and instance.meeting_type:
+        # Get the template roles
+        roles_to_add = instance.meeting_type.default_roles.all()
+
+        # Bulk create the specific roles for this meeting
+        for role in roles_to_add:
+            MeetingRole.objects.get_or_create(meeting=instance, role=role)

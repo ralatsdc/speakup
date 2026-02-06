@@ -1,11 +1,17 @@
 from django.contrib import admin
-from .models import Meeting, Role, MeetingRole
+from .models import Meeting, Role, MeetingRole, MeetingType, Attendance
 
 
 # 1. Setup the Role Admin
 @admin.register(Role)
 class RoleAdmin(admin.ModelAdmin):
     list_display = ("name", "is_speech_role", "points")
+
+
+@admin.register(MeetingType)
+class MeetingTypeAdmin(admin.ModelAdmin):
+    # This allows you to select multiple roles nicely
+    filter_horizontal = ("default_roles",)
 
 
 # 2. Setup the Inline
@@ -21,6 +27,12 @@ class MeetingRoleInline(admin.TabularInline):
 # 3. Setup the Meeting Admin
 @admin.register(Meeting)
 class MeetingAdmin(admin.ModelAdmin):
+    list_display = (
+        "date",
+        "meeting_type",
+        "theme",
+        "role_count_status",
+    )  # Added meeting_type
     list_display = ("date", "theme", "role_count_status")
     inlines = [MeetingRoleInline]  # Connects the inline here
 
