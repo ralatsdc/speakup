@@ -1,7 +1,7 @@
 from django.contrib import admin, messages
 from django.contrib.auth import get_user_model
 from django.utils.crypto import get_random_string
-from .models import Meeting, Role, MeetingRole, MeetingType, Attendance
+from .models import Meeting, Role, MeetingRole, MeetingType, MeetingTypeItem, Attendance
 
 User = get_user_model()
 
@@ -12,10 +12,15 @@ class RoleAdmin(admin.ModelAdmin):
     list_display = ("name", "is_speech_role", "points")
 
 
+# 1. Helper to define the template items (Speaker x3)
+class MeetingTypeItemInline(admin.TabularInline):
+    model = MeetingTypeItem
+    extra = 1
+
+
 @admin.register(MeetingType)
 class MeetingTypeAdmin(admin.ModelAdmin):
-    # This allows you to select multiple roles nicely
-    filter_horizontal = ("default_roles",)
+    inlines = [MeetingTypeItemInline]  # Allows editing quantities inside the Type page
 
 
 # 2. Setup the Inline
@@ -49,11 +54,12 @@ class MeetingAdmin(admin.ModelAdmin):
     role_count_status.short_description = "Staffing"
 
 
-# 4. Register MeetingRole separately too (optional, but good for debugging)
+# 2. Update MeetingRoleAdmin (Optional: add sort_order to list_editable)
 @admin.register(MeetingRole)
 class MeetingRoleAdmin(admin.ModelAdmin):
-    list_display = ("meeting", "role", "user")
+    list_display = ("meeting", "role", "user", "sort_order")
     list_filter = ("meeting", "role")
+    list_editable = ("user", "sort_order")  # Allow reordering/assigning from list view
 
 
 @admin.register(Attendance)

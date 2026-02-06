@@ -17,10 +17,25 @@ class Role(models.Model):
 # 1. New Model: Defines the template
 class MeetingType(models.Model):
     name = models.CharField(max_length=100)  # e.g., "Regular Meeting"
-    default_roles = models.ManyToManyField(Role, related_name="meeting_types")
 
     def __str__(self):
         return self.name
+
+
+# 3. New Model: Template Item (Links Type to Role with a Count)
+class MeetingTypeItem(models.Model):
+    meeting_type = models.ForeignKey(
+        MeetingType, on_delete=models.CASCADE, related_name="items"
+    )
+    role = models.ForeignKey(Role, on_delete=models.CASCADE)
+    count = models.PositiveIntegerField(default=1, help_text="How many of this role?")
+    order = models.PositiveIntegerField(default=0, help_text="Order in the agenda")
+
+    class Meta:
+        ordering = ["order"]
+
+    def __str__(self):
+        return f"{self.meeting_type}: {self.role} x{self.count}"
 
 
 # 3. Update Meeting Model: Add the link
@@ -54,6 +69,9 @@ class MeetingRole(models.Model):
         related_name="meeting_roles",
     )
 
+    # We add an optional sorting field so "Speaker 1" stays above "Speaker 2"
+    sort_order = models.PositiveIntegerField(default=0)
+
     # If someone backs out, who fills in?
     backup_user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -62,9 +80,6 @@ class MeetingRole(models.Model):
         blank=True,
         related_name="backup_roles",
     )
-
-    class Meta:
-        unique_together = ("meeting", "role")  # One Toastmaster per meeting
 
     def __str__(self):
         assigned = self.user.username if self.user else "OPEN"
@@ -96,9 +111,12 @@ class Attendance(models.Model):
 @receiver(post_save, sender=Meeting)
 def populate_meeting_roles(sender, instance, created, **kwargs):
     if created and instance.meeting_type:
-        # Get the template roles
-        roles_to_add = instance.meeting_type.default_roles.all()
-
-        # Bulk create the specific roles for this meeting
-        for role in roles_to_add:
-            MeetingRole.objects.get_or_create(meeting=instance, role=role)
+        # Loop through the defined items in the template
+        for item in instance.meeting_type.items.all():
+            # Create N copies of the role
+            for i in range(item.count):
+                MeetingRole.objects.create(
+                    meeting=instance,
+                    role=item.role,
+                    sort_order=item.order,  # Keep the agenda sorted!
+                )
