@@ -3,7 +3,15 @@
 {% block submit_buttons_bottom %}
     {{ block.super }}
     <div class="submit-row">
-        <input type="submit" value="Send Email Reminders" name="_send-reminders" class="default" style="background-color: #e11d48;">
-        <p class="help">Clicking this will email everyone assigned a role, and ask unassigned members to fill open spots.</p>
+        <!-- Button 1: Pre-Meeting Reminders -->
+        <input type="submit" value="Send Email Reminders" name="_send-reminders" class="default" style="background-color: #e11d48; margin-right: 10px;">
+        
+        <!-- Button 2: Post-Meeting Feedback -->
+        <input type="submit" value="Send Feedback Emails" name="_send-feedback" class="default" style="background-color: #10b981;">
+        
+        <p class="help">
+            <strong>Red:</strong> Remind people BEFORE the meeting.<br>
+            <strong>Green:</strong> Send 'Admin Notes' to specific members AFTER the meeting.
+        </p>
     </div>
 {% endblock %}

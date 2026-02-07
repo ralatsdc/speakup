@@ -3,6 +3,7 @@ from django.conf import settings
 from django.urls import reverse
 from members.models import User
 
+
 def send_meeting_reminders(meeting, domain="http://127.0.0.1:8000"):
     """
     Sends two types of emails:
@@ -57,3 +58,41 @@ def send_meeting_reminders(meeting, domain="http://127.0.0.1:8000"):
 
     # Send all at once
     return send_mass_mail(tuple(messages), fail_silently=False)
+
+
+def send_meeting_feedback(meeting, domain="http://127.0.0.1:8000"):
+    """
+    Sends individual emails to members who have 'admin_notes' on their role.
+    """
+    messages = []
+    sender = settings.EMAIL_HOST_USER
+
+    # Filter for roles that actually have feedback written
+    roles_with_feedback = meeting.roles.exclude(admin_notes="").exclude(
+        user__isnull=True
+    )
+
+    count = 0
+    for assignment in roles_with_feedback:
+        user = assignment.user
+        if not user.email:
+            continue
+
+        subject = f"Feedback: Your role as {assignment.role.name}"
+        body = (
+            f"Hi {user.first_name},\n\n"
+            f"Thank you for taking the role of **{assignment.role.name}** at our meeting on {meeting.date.date()}.\n\n"
+            f"Here are the notes/feedback regarding your role:\n"
+            f"----------------------------------------------------\n"
+            f"{assignment.admin_notes}\n"
+            f"----------------------------------------------------\n\n"
+            f"See you at the next meeting!\n"
+            f"SpeakUp Team"
+        )
+
+        messages.append((subject, body, sender, [user.email]))
+        count += 1
+
+    # Send all emails in one connection
+    send_mass_mail(tuple(messages), fail_silently=False)
+    return count

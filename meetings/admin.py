@@ -36,7 +36,7 @@ class MeetingRoleInline(admin.TabularInline):
     autocomplete_fields = [
         "user"
     ]  # Great if you have 50+ members (requires search_fields on User)
-    fields = ("role", "user", "notes", "sort_order")
+    fields = ("role", "user", "notes", "admin_notes", "sort_order")
 
 
 # 3. Setup the Meeting Admin
@@ -70,6 +70,11 @@ class MeetingAdmin(admin.ModelAdmin):
                 self.admin_site.admin_view(self.process_reminders),
                 name="meeting-reminders",
             ),
+            path(
+                "<int:meeting_id>/send-feedback/",
+                self.admin_site.admin_view(self.process_feedback),
+                name="meeting-feedback",
+            ),
         ]
         return custom_urls + urls
 
@@ -82,10 +87,33 @@ class MeetingAdmin(admin.ModelAdmin):
         )
         return HttpResponseRedirect(f"../../{meeting_id}/change/")
 
+    # NEW: Handle the Feedback button
+    def process_feedback(self, request, meeting_id):
+        from .utils import (
+            send_meeting_feedback,
+        )  # Import inside method to avoid circular imports
+
+        meeting = self.get_object(request, meeting_id)
+
+        count = send_meeting_feedback(meeting)
+
+        if count > 0:
+            self.message_user(
+                request, f"Sent feedback emails to {count} members.", messages.SUCCESS
+            )
+        else:
+            self.message_user(
+                request, "No feedback notes found to send.", messages.WARNING
+            )
+
+        return HttpResponseRedirect(f"../../{meeting_id}/change/")
+
     # Add the button to the UI
     def response_change(self, request, obj):
         if "_send-reminders" in request.POST:
             return self.process_reminders(request, obj.pk)
+        if "_send-feedback" in request.POST:
+            return self.process_feedback(request, obj.pk)
         return super().response_change(request, obj)
 
 

@@ -69,6 +69,7 @@ class MeetingRole(models.Model):
         related_name="meeting_roles",
     )
     notes = models.TextField(blank=True, help_text="Speech title, project details, or feedback.")
+    admin_notes = models.TextField(blank=True, help_text="Private feedback or details for the follow-up email.")
 
     # We add an optional sorting field so "Speaker 1" stays above "Speaker 2"
     sort_order = models.PositiveIntegerField(default=0)
