@@ -33,6 +33,28 @@ SECRET_KEY = os.getenv(
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv("DEBUG", "False") == "True"
+if not DEBUG:
+    # 1. CSRF TRUST (Fixes 403 Forbidden)
+    # This tells Django to trust requests coming from your Railway URL.
+    # Replace the string below if you use a custom domain.
+    csrf_trusted = os.getenv("CSRF_TRUSTED_ORIGINS", "")
+    if csrf_trusted:
+        CSRF_TRUSTED_ORIGINS = csrf_trusted.split(",")
+    else:
+        # Fallback: Trust all Railway subdomains (Wildcard)
+        CSRF_TRUSTED_ORIGINS = ["https://*.railway.app", "https://*.up.railway.app"]
+
+    # 2. PROXY SSL HEADER (Fixes Redirect Loops & Security Checks)
+    # Railway terminates SSL at the load balancer. This tells Django:
+    # "If the header says HTTPS, trust that it is HTTPS."
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+    SECURE_SSL_REDIRECT = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+
+    # 3. STATIC FILES (Fixes "Unusable Page" / Missing CSS)
+    # Ensure Whitenoise is configured to serve files
+    STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 
 
 # Allowed hosts for development
