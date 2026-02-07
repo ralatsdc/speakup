@@ -177,6 +177,9 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/4.2/howto/static-files/
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"  # Where files go in production
+# Add these lines to prevent the "No directory" crash
+if not os.path.exists(STATIC_ROOT):
+    os.makedirs(STATIC_ROOT)
 
 # Enable Whitenoise storage for production
 STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
