@@ -33,9 +33,19 @@ SECRET_KEY = os.getenv(
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv("DEBUG", "False") == "True"
-if not DEBUG:
-    # 1. CSRF TRUST (Fixes 403 Forbidden)
-    # This tells Django to trust requests coming from your Railway URL.
+
+# Distinguish between debugging and deploying
+DEPLOY = os.getenv("DEPLOY", "False") == "True"
+
+
+# Allowed hosts
+if not DEPLOY:
+    ALLOWED_HOSTS = []
+else:
+    # Expected by Railway
+    ALLOWED_HOSTS = ["*"]
+
+    # Trust requests coming from your Railway URL.
     # Replace the string below if you use a custom domain.
     csrf_trusted = os.getenv("CSRF_TRUSTED_ORIGINS", "")
     if csrf_trusted:
@@ -51,17 +61,6 @@ if not DEBUG:
     SECURE_SSL_REDIRECT = True
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
-
-    # 3. STATIC FILES (Fixes "Unusable Page" / Missing CSS)
-    # Ensure Whitenoise is configured to serve files
-    STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
-
-
-# Allowed hosts for development
-# ALLOWED_HOSTS = []
-
-# Allow the host provided by Railway/Render
-ALLOWED_HOSTS = ["*"]
 
 
 # Application definition
@@ -85,7 +84,8 @@ INSTALLED_APPS = [
 ]
 
 
-# Add HTMX to middleware for frontend interactivity later
+# Add WhiteNoise to middleware for collecting static files
+# Add HTMX to middleware for frontend interactivity
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
@@ -123,25 +123,25 @@ WSGI_APPLICATION = "config.wsgi.application"
 # Database
 # https://docs.djangoproject.com/en/4.2/ref/settings/#databases
 
-# Database for development
+# Email configuration for development
+DATABASES = {
+    "default": {
+        "ENGINE": "django.db.backends.sqlite3",
+        "NAME": BASE_DIR / "db.sqlite3",
+    }
+}
+
+# Email configuration for production
 # DATABASES = {
-#     "default": {
-#         "ENGINE": "django.db.backends.sqlite3",
-#         "NAME": BASE_DIR / "db.sqlite3",
-#     }
+#     "default": dj_database_url.config(default="sqlite:///db.sqlite3", conn_max_age=600)
 # }
 
-# Database for production
-DATABASES = {
-    "default": dj_database_url.config(default="sqlite:///db.sqlite3", conn_max_age=600)
-}
 
 # Set the custom user model
 AUTH_USER_MODEL = "members.User"
 
 # Password validation
 # https://docs.djangoproject.com/en/4.2/ref/settings/#auth-password-validators
-
 AUTH_PASSWORD_VALIDATORS = [
     {
         "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator",
@@ -163,13 +163,9 @@ LOGOUT_REDIRECT_URL = "/"
 
 # Internationalization
 # https://docs.djangoproject.com/en/4.2/topics/i18n/
-
 LANGUAGE_CODE = "en-us"
-
 TIME_ZONE = "UTC"
-
 USE_I18N = True
-
 USE_TZ = True
 
 
@@ -177,12 +173,12 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/4.2/howto/static-files/
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"  # Where files go in production
-# Add these lines to prevent the "No directory" crash
-if not os.path.exists(STATIC_ROOT):
+# Prevent the "No directory" crash on Railway
+if DEPLOY and not os.path.exists(STATIC_ROOT):
     os.makedirs(STATIC_ROOT)
 
-# Enable Whitenoise storage for production
-STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
+    # Enable Whitenoise storage for production
+    STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 
 
 # Default primary key field type
