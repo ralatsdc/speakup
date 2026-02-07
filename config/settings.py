@@ -10,9 +10,16 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/4.2/ref/settings/
 """
 
+import os
 from pathlib import Path
 
+from dotenv import load_dotenv
 from import_export.formats.base_formats import CSV
+
+
+# Load variables from .env
+load_dotenv()
+
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -41,7 +48,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     # Third party
     "django_htmx",
-    'import_export',
+    "import_export",
     # Local Apps (The SpeakUp Architecture)
     "core",
     "members",
@@ -145,3 +152,16 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # Ensure CSV is the default import and export format
 IMPORT_EXPORT_FORMATS = [CSV]
+
+# Email configuration for development
+# EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+# EMAIL_HOST_USER = "officers@speakup.com"  # Default "From" address
+
+# Email configuration for operation
+EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+EMAIL_HOST = "smtp-relay.brevo.com"
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
+EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER")
+EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD")
+DEFAULT_FROM_EMAIL = EMAIL_HOST_USER

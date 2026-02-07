@@ -1,7 +1,12 @@
 from django.contrib import admin, messages
 from django.contrib.auth import get_user_model
+from django.http import HttpResponseRedirect
 from django.utils.crypto import get_random_string
+from django.utils.html import format_html
+from django.urls import path
+
 from .models import Meeting, Role, MeetingRole, MeetingType, MeetingTypeItem, Attendance
+from .utils import send_meeting_reminders
 
 User = get_user_model()
 
@@ -44,6 +49,9 @@ class MeetingAdmin(admin.ModelAdmin):
     )  # Added meeting_type
     list_display = ("date", "theme", "role_count_status")
     inlines = [MeetingRoleInline]  # Connects the inline here
+    change_form_template = (
+        "meetings/admin/meeting_change_form.html"  # We need to extend the template
+    )
 
     # A custom helper to see at a glance if the meeting is fully staffed
     def role_count_status(self, obj):
@@ -52,6 +60,32 @@ class MeetingAdmin(admin.ModelAdmin):
         return f"{filled}/{total} Roles Filled"
 
     role_count_status.short_description = "Staffing"
+
+    def get_urls(self):
+        urls = super().get_urls()
+        custom_urls = [
+            path(
+                "<int:meeting_id>/send-reminders/",
+                self.admin_site.admin_view(self.process_reminders),
+                name="meeting-reminders",
+            ),
+        ]
+        return custom_urls + urls
+
+    def process_reminders(self, request, meeting_id):
+        # The logic to trigger the email
+        meeting = self.get_object(request, meeting_id)
+        count = send_meeting_reminders(meeting)
+        self.message_user(
+            request, f"Successfully queued {count} reminder emails.", messages.SUCCESS
+        )
+        return HttpResponseRedirect(f"../../{meeting_id}/change/")
+
+    # Add the button to the UI
+    def response_change(self, request, obj):
+        if "_send-reminders" in request.POST:
+            return self.process_reminders(request, obj.pk)
+        return super().response_change(request, obj)
 
 
 # 2. Update MeetingRoleAdmin (Optional: add sort_order to list_editable)
