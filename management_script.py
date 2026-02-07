@@ -13,6 +13,10 @@ from django.core.management import call_command
 print("Running Migrations...")
 call_command('migrate')
 
+print("Collecting static files...")
+# This generates the 'staticfiles' folder so Whitenoise can serve CSS
+call_command('collectstatic', interactive=False, clear=True)
+
 # 2. Create Superuser if missing
 SU_NAME = os.getenv('DJANGO_SUPERUSER_USERNAME', 'admin')
 SU_EMAIL = os.getenv('DJANGO_SUPERUSER_EMAIL', 'admin@example.com')
