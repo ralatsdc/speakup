@@ -36,6 +36,7 @@ class MeetingRoleInline(admin.TabularInline):
     autocomplete_fields = [
         "user"
     ]  # Great if you have 50+ members (requires search_fields on User)
+    fields = ("role", "user", "notes", "sort_order")
 
 
 # 3. Setup the Meeting Admin

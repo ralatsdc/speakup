@@ -10,6 +10,8 @@ from django.views.decorators.http import require_POST
 
 from .models import Meeting, MeetingRole, Attendance
 
+User = get_user_model()
+
 
 def upcoming_meetings(request):
 
@@ -87,7 +89,29 @@ def toggle_role(request, role_id):
     )
 
 
-User = get_user_model()
+@login_required
+@require_POST
+def save_role_note(request, role_id):
+    """
+    Updates the notes field for a specific role assignment.
+    """
+    assignment = get_object_or_404(MeetingRole, id=role_id)
+
+    # Permission Check: Only Officers or the Assigned User can edit
+    can_edit = request.user.is_officer or (assignment.user == request.user)
+
+    if not can_edit:
+        return HttpResponseForbidden("You do not have permission to edit this note.")
+
+    # Update the note
+    new_note = request.POST.get("note_content", "").strip()
+    assignment.notes = new_note
+    assignment.save()
+
+    # Return the updated partial for the row
+    return render(
+        request, "meetings/partials/role_row.html", {"assignment": assignment}
+    )
 
 
 @login_required

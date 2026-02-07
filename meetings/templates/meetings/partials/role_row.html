@@ -1,66 +1,76 @@
 <!-- meetings/templates/meetings/partials/role_row.html -->
 <tr id="role-row-{{ assignment.id }}">
-    <!-- Column 1: Role Name -->
-    <td class="fw-bold align-middle">{{ assignment.role.name }}</td>
-    
-    <!-- Column 2: Member / Button -->
+    <!-- Column 1: Role -->
+    <td class="fw-bold align-middle">
+        {{ assignment.role.name }}
+    </td>
+
+    <!-- Column 2: Member & Notes -->
     <td class="align-middle">
+        <!-- 1. The User / Button Logic (Existing) -->
+        <div class="d-flex justify-content-between align-items-center">
+            <div>
+                {% if assignment.user %}
+                    {% if assignment.user == user %}
+                        <span class="text-success fw-bold me-2">You</span>
+                        {% if user.is_guest %}<span class="badge rounded-pill bg-info text-dark me-2">Guest</span>{% endif %}
+                        <button class="btn btn-sm btn-outline-danger"
+                                hx-post="{% url 'toggle_role' assignment.id %}"
+                                hx-target="#role-row-{{ assignment.id }}"
+                                hx-swap="outerHTML">Drop</button>
+                    {% else %}
+                        {{ assignment.user.first_name }} {{ assignment.user.last_name }}
+                        {% if assignment.user.is_guest %}<span class="badge rounded-pill bg-info text-dark ms-1">Guest</span>{% endif %}
+                    {% endif %}
+                {% else %}
+                    {% if user.is_authenticated %}
+                        <button class="btn btn-sm btn-primary"
+                                hx-post="{% url 'toggle_role' assignment.id %}"
+                                hx-target="#role-row-{{ assignment.id }}"
+                                hx-swap="outerHTML">Sign Up</button>
+                    {% else %}
+                        <span class="text-muted fst-italic">-- Open --</span>
+                    {% endif %}
+                {% endif %}
+            </div>
+
+            <!-- 2. The Edit Icon (Only for Assignee or Officer) -->
+            {% if assignment.user and user.is_authenticated %}
+                {% if assignment.user == user or user.is_officer %}
+                    <button class="btn btn-link btn-sm text-secondary p-0 ms-2" 
+                            onclick="document.getElementById('note-edit-{{ assignment.id }}').classList.toggle('d-none'); document.getElementById('note-display-{{ assignment.id }}').classList.toggle('d-none');"
+                            title="Edit Note / Speech Title">
+                        ✏️
+                    </button>
+                {% endif %}
+            {% endif %}
+        </div>
+
+        <!-- 3. The Note Display Area -->
         {% if assignment.user %}
-            {% if assignment.user == user %}
-                <!-- It's ME -->
-                <span class="text-success fw-bold me-2">You</span>
-
-                <!-- NEW: Show my status if I am a guest
-                {% if user.is_guest %}
-                    <span class="badge rounded-pill bg-info text-dark me-2">Guest</span>
-                {% endif %} -->
-                <!-- Or, distinguish "Member" vs "Officer" vs "Guest" -->
-                {% if assignment.user.is_guest %}
-                    <span class="badge bg-info text-dark ms-1">Guest</span>
-                {% elif assignment.user.is_officer %}
-                    <span class="badge bg-warning text-dark ms-1">Officer</span>
-                {% else %}
-                    <span class="badge bg-light text-dark border ms-1">Member</span>
+            <div class="mt-1 small text-muted" id="note-display-{{ assignment.id }}">
+                {% if assignment.notes %}
+                    <em>{{ assignment.notes|linebreaksbr }}</em>
                 {% endif %}
-                <button class="btn btn-sm btn-outline-danger"
-                        hx-post="{% url 'toggle_role' assignment.id %}"
-                        hx-target="#role-row-{{ assignment.id }}"
-                        hx-swap="outerHTML">
-                    Drop Role
-                </button>
-            {% else %}
-                <!-- It's someone else -->
-                {{ assignment.user.first_name }} {{ assignment.user.last_name }}
+            </div>
 
-                <!-- NEW: Show Guest Badge for others
-                {% if assignment.user.is_guest %}
-                    <span class="badge rounded-pill bg-info text-dark ms-1">Guest</span>
-                {% endif %} -->
-                <!-- Or, distinguish "Member" vs "Officer" vs "Guest" -->
-                {% if assignment.user.is_guest %}
-                    <span class="badge bg-info text-dark ms-1">Guest</span>
-                {% elif assignment.user.is_officer %}
-                    <span class="badge bg-warning text-dark ms-1">Officer</span>
-                {% else %}
-                    <span class="badge bg-light text-dark border ms-1">Member</span>
-                {% endif %}
-            {% endif %}
-        {% else %}
-            <!-- It's Open: Show Sign Up Button -->
-            {% if user.is_authenticated %}
-                <button class="btn btn-sm btn-primary"
-                        hx-post="{% url 'toggle_role' assignment.id %}"
-                        hx-target="#role-row-{{ assignment.id }}"
-                        hx-swap="outerHTML">
-                    Sign Up
-                </button>
-            {% else %}
-                <span class="text-muted fst-italic">-- Open --</span>
-            {% endif %}
+            <!-- 4. The Hidden Edit Form -->
+            <div id="note-edit-{{ assignment.id }}" class="mt-2 d-none">
+                <form hx-post="{% url 'save_role_note' assignment.id %}" 
+                      hx-target="#role-row-{{ assignment.id }}"
+                      hx-swap="outerHTML">
+                    <textarea name="note_content" class="form-control form-control-sm mb-1" rows="2" placeholder="Speech Title or Notes...">{{ assignment.notes }}</textarea>
+                    <button type="submit" class="btn btn-success btn-sm py-0 px-2">Save</button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-2" 
+                            onclick="document.getElementById('note-edit-{{ assignment.id }}').classList.add('d-none'); document.getElementById('note-display-{{ assignment.id }}').classList.remove('d-none');">
+                        Cancel
+                    </button>
+                </form>
+            </div>
         {% endif %}
     </td>
 
-    <!-- Column 3: Status Badge -->
+    <!-- Column 3: Status -->
     <td class="align-middle">
         {% if assignment.user %}
             <span class="badge bg-success">Filled</span>
