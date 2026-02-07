@@ -13,6 +13,7 @@ https://docs.djangoproject.com/en/4.2/ref/settings/
 import os
 from pathlib import Path
 
+import dj_database_url
 from dotenv import load_dotenv
 from import_export.formats.base_formats import CSV
 
@@ -25,20 +26,23 @@ load_dotenv()
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
-# Quick-start development settings - unsuitable for production
-# See https://docs.djangoproject.com/en/4.2/howto/deployment/checklist/
-
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = "django-insecure-)%@r1uqdg_sn*w9if2yy_qxi#h2c74pw^qkfqnui&=2y$*1q7x"
+SECRET_KEY = os.getenv(
+    "SECRET_KEY", "django-insecure-)%@r1uqdg_sn*w9if2yy_qxi#h2c74pw^qkfqnui&=2y$*1q7x"
+)
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.getenv("DEBUG", "False") == "True"
 
-ALLOWED_HOSTS = []
+
+# Allowed hosts for development
+# ALLOWED_HOSTS = []
+
+# Allow the host provided by Railway/Render
+ALLOWED_HOSTS = ["*"]
 
 
 # Application definition
-
 INSTALLED_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",
@@ -62,6 +66,7 @@ INSTALLED_APPS = [
 # Add HTMX to middleware for frontend interactivity later
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -96,13 +101,18 @@ WSGI_APPLICATION = "config.wsgi.application"
 # Database
 # https://docs.djangoproject.com/en/4.2/ref/settings/#databases
 
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
-    }
-}
+# Database for development
+# DATABASES = {
+#     "default": {
+#         "ENGINE": "django.db.backends.sqlite3",
+#         "NAME": BASE_DIR / "db.sqlite3",
+#     }
+# }
 
+# Database for production
+DATABASES = {
+    "default": dj_database_url.config(default="sqlite:///db.sqlite3", conn_max_age=600)
+}
 
 # Set the custom user model
 AUTH_USER_MODEL = "members.User"
@@ -143,8 +153,12 @@ USE_TZ = True
 
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/4.2/howto/static-files/
-
 STATIC_URL = "static/"
+STATIC_ROOT = BASE_DIR / "staticfiles"  # Where files go in production
+
+# Enable Whitenoise storage for production
+STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
+
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/4.2/ref/settings/#default-auto-field
@@ -158,11 +172,11 @@ IMPORT_EXPORT_FORMATS = [CSV]
 # EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
 # EMAIL_HOST_USER = "officers@speakup.com"  # Default "From" address
 
-# Email configuration for operation
+# Email configuration for production
 EMAIL_BACKEND = "anymail.backends.brevo.EmailBackend"
-BREVO_API_KEY = os.getenv('BREVO_API_KEY')
+BREVO_API_KEY = os.getenv("BREVO_API_KEY")
 ANYMAIL = {
     "BREVO_API_KEY": BREVO_API_KEY,
 }
-DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'noreply@speakup.com')
-SERVER_EMAIL = DEFAULT_FROM_EMAIL # Error messages come from here
+DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "noreply@speakup.com")
+SERVER_EMAIL = DEFAULT_FROM_EMAIL  # Error messages come from here
