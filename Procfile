@@ -1,1 +1,1 @@
-web: gunicorn config.wsgi
+web: python management_script.py && gunicorn config.wsgi
