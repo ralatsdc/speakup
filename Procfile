@@ -1,2 +1,1 @@
 web: gunicorn config.wsgi
-release: python manage.py collectstatic --noinput && python manage.py migrate --noinput && python manage.py createsuperuser --noinput --username admin --email raymond.leclair@thenutcake.net 2>/dev/null; true

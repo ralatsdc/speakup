@@ -1,2 +1,2 @@
 [deploy]
-startCommand = "python manage.py collectstatic --noinput && python manage.py migrate --noinput && python manage.py shell -c \"from django.contrib.auth import get_user_model; User = get_user_model(); u, created = User.objects.get_or_create(username='admin', defaults={'email': 'raymond.leclair@thenutcake.net', 'is_staff': True, 'is_superuser': True}); u.set_password('SpeakUpAdmin2026'); u.is_staff = True; u.is_superuser = True; u.save(); print('Admin ready, created=' + str(created))\" && gunicorn config.wsgi"
+startCommand = "python manage.py collectstatic --noinput && python manage.py migrate --noinput && gunicorn config.wsgi"
