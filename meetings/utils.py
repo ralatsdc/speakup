@@ -18,7 +18,7 @@ def send_meeting_reminders(meeting):
     sender = settings.DEFAULT_FROM_EMAIL
     domain = settings.SITE_URL
 
-    # 1. Remind Assigned People
+    # Remind people who already have a role
     assignments = meeting.roles.filter(user__isnull=False)
     for assignment in assignments:
         user = assignment.user
@@ -36,10 +36,9 @@ def send_meeting_reminders(meeting):
         )
         messages.append((subject, body, sender, [user.email]))
 
-    # 2. Beg for Help (Open Roles)
+    # Ask unassigned members to fill open roles
     open_roles = meeting.roles.filter(user__isnull=True)
     if open_roles.exists():
-        # Get active members who are NOT already assigned a role
         assigned_user_ids = assignments.values_list("user_id", flat=True)
         unassigned_members = User.objects.filter(
             is_active=True, is_guest=False
@@ -75,7 +74,7 @@ def send_meeting_feedback(meeting):
     messages = []
     sender = settings.DEFAULT_FROM_EMAIL
 
-    # Filter for roles that actually have feedback written
+    # Only send to roles where an officer wrote admin_notes
     roles_with_feedback = meeting.roles.exclude(admin_notes="").exclude(
         user__isnull=True
     )

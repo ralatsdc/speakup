@@ -8,9 +8,10 @@ from django.dispatch import receiver
 logger = logging.getLogger(__name__)
 
 
-# 2. Existing Role Model (No changes needed)
 class Role(models.Model):
-    name = models.CharField(max_length=100)  # e.g., Toastmaster, Timer, Ah-Counter
+    """A role that can be assigned at a meeting (e.g. Toastmaster, Timer, Speaker)."""
+
+    name = models.CharField(max_length=100)
     is_speech_role = models.BooleanField(default=False)
     points = models.IntegerField(default=1, help_text="Points for difficulty/effort")
 
@@ -18,16 +19,18 @@ class Role(models.Model):
         return self.name
 
 
-# 1. New Model: Defines the template
 class MeetingType(models.Model):
-    name = models.CharField(max_length=100)  # e.g., "Regular Meeting"
+    """A reusable template that defines which roles a meeting needs (e.g. "Regular Meeting")."""
+
+    name = models.CharField(max_length=100)
 
     def __str__(self):
         return self.name
 
 
-# 3. New Model: Template Item (Links Type to Role with a Count)
 class MeetingTypeItem(models.Model):
+    """One line in a MeetingType template: 'this meeting needs N of this role'."""
+
     meeting_type = models.ForeignKey(
         MeetingType, on_delete=models.CASCADE, related_name="items"
     )
@@ -42,8 +45,9 @@ class MeetingTypeItem(models.Model):
         return f"{self.meeting_type}: {self.role} x{self.count}"
 
 
-# 3. Update Meeting Model: Add the link
 class Meeting(models.Model):
+    """A scheduled club meeting."""
+
     meeting_type = models.ForeignKey(
         MeetingType, on_delete=models.SET_NULL, null=True, blank=True
     )
@@ -51,7 +55,6 @@ class Meeting(models.Model):
     theme = models.CharField(max_length=200, blank=True)
     word_of_the_day = models.CharField(max_length=50, blank=True)
 
-    # If you meet hybrid/online
     zoom_link = models.URLField(blank=True)
 
     def __str__(self):
@@ -59,9 +62,7 @@ class Meeting(models.Model):
 
 
 class MeetingRole(models.Model):
-    """
-    The Pivot Table: Assigns a User to a Role for a specific Meeting.
-    """
+    """Assigns a User to a Role for a specific Meeting."""
 
     meeting = models.ForeignKey(Meeting, on_delete=models.CASCADE, related_name="roles")
     role = models.ForeignKey(Role, on_delete=models.PROTECT)
@@ -83,14 +84,15 @@ class MeetingRole(models.Model):
 
 
 class Attendance(models.Model):
+    """Records who attended a meeting. Links to a User for members, or stores
+    guest_name/guest_email for walk-in guests."""
+
     meeting = models.ForeignKey(
         Meeting, on_delete=models.CASCADE, related_name="attendances"
     )
-    # Link to a member...
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True
     )
-    # ...OR store guest details
     guest_name = models.CharField(max_length=100, blank=True)
     guest_email = models.EmailField(blank=True)
 
@@ -113,6 +115,7 @@ class Attendance(models.Model):
 
 @receiver(post_save, sender=Meeting)
 def populate_meeting_roles(sender, instance, created, **kwargs):
+    """Auto-create MeetingRole rows from the MeetingType template when a new Meeting is saved."""
     if created and instance.meeting_type:
         try:
             for item in instance.meeting_type.items.all():

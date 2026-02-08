@@ -6,13 +6,11 @@ from .models import Meeting, Role, MeetingRole, MeetingType, MeetingTypeItem, At
 from .utils import send_meeting_reminders
 
 
-# 1. Setup the Role Admin
 @admin.register(Role)
 class RoleAdmin(admin.ModelAdmin):
     list_display = ("name", "is_speech_role", "points")
 
 
-# 1. Helper to define the template items (Speaker x3)
 class MeetingTypeItemInline(admin.TabularInline):
     model = MeetingTypeItem
     extra = 1
@@ -20,30 +18,22 @@ class MeetingTypeItemInline(admin.TabularInline):
 
 @admin.register(MeetingType)
 class MeetingTypeAdmin(admin.ModelAdmin):
-    inlines = [MeetingTypeItemInline]  # Allows editing quantities inside the Type page
+    inlines = [MeetingTypeItemInline]
 
 
-# 2. Setup the Inline
-# This allows you to edit MeetingRoles *inside* the Meeting page
 class MeetingRoleInline(admin.TabularInline):
     model = MeetingRole
-    extra = 0  # Don't show extra empty rows by default
-    autocomplete_fields = [
-        "user"
-    ]  # Great if you have 50+ members (requires search_fields on User)
+    extra = 0
+    autocomplete_fields = ["user"]
     fields = ("role", "user", "notes", "admin_notes", "sort_order")
 
 
-# 3. Setup the Meeting Admin
 @admin.register(Meeting)
 class MeetingAdmin(admin.ModelAdmin):
     list_display = ("date", "meeting_type", "theme", "role_count_status")
-    inlines = [MeetingRoleInline]  # Connects the inline here
-    change_form_template = (
-        "meetings/admin/meeting_change_form.html"  # We need to extend the template
-    )
+    inlines = [MeetingRoleInline]
+    change_form_template = "meetings/admin/meeting_change_form.html"
 
-    # A custom helper to see at a glance if the meeting is fully staffed
     def role_count_status(self, obj):
         filled = obj.roles.filter(user__isnull=False).count()
         total = obj.roles.count()
@@ -68,7 +58,6 @@ class MeetingAdmin(admin.ModelAdmin):
         return custom_urls + urls
 
     def process_reminders(self, request, meeting_id):
-        # The logic to trigger the email
         meeting = self.get_object(request, meeting_id)
         count = send_meeting_reminders(meeting)
         self.message_user(
@@ -76,14 +65,10 @@ class MeetingAdmin(admin.ModelAdmin):
         )
         return HttpResponseRedirect(f"../../{meeting_id}/change/")
 
-    # NEW: Handle the Feedback button
     def process_feedback(self, request, meeting_id):
-        from .utils import (
-            send_meeting_feedback,
-        )  # Import inside method to avoid circular imports
+        from .utils import send_meeting_feedback
 
         meeting = self.get_object(request, meeting_id)
-
         count = send_meeting_feedback(meeting)
 
         if count > 0:
@@ -97,8 +82,8 @@ class MeetingAdmin(admin.ModelAdmin):
 
         return HttpResponseRedirect(f"../../{meeting_id}/change/")
 
-    # Add the button to the UI
     def response_change(self, request, obj):
+        """Route the custom 'Send Reminders' and 'Send Feedback' buttons."""
         if "_send-reminders" in request.POST:
             return self.process_reminders(request, obj.pk)
         if "_send-feedback" in request.POST:
@@ -106,12 +91,11 @@ class MeetingAdmin(admin.ModelAdmin):
         return super().response_change(request, obj)
 
 
-# 2. Update MeetingRoleAdmin (Optional: add sort_order to list_editable)
 @admin.register(MeetingRole)
 class MeetingRoleAdmin(admin.ModelAdmin):
     list_display = ("meeting", "role", "user", "sort_order")
     list_filter = ("meeting", "role")
-    list_editable = ("user", "sort_order")  # Allow reordering/assigning from list view
+    list_editable = ("user", "sort_order")
 
 
 @admin.register(Attendance)
@@ -119,7 +103,7 @@ class AttendanceAdmin(admin.ModelAdmin):
     list_display = ("meeting", "who_attended", "guest_email", "timestamp")
     list_filter = ("meeting", ("user", admin.EmptyFieldListFilter))
     search_fields = ("guest_name", "guest_email")
-    actions = ["convert_guest_to_user"]  # Enable the action
+    actions = ["convert_guest_to_user"]
 
     @admin.action(description="Convert selected guests to Users")
     def convert_guest_to_user(self, request, queryset):

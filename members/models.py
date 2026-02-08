@@ -11,13 +11,13 @@ class User(AbstractUser):
     is_guest = models.BooleanField(default=False)
     phone_number = models.CharField(max_length=20, blank=True)
 
-    # Toastmaster specific fields
+    # Club membership fields
     join_date = models.DateField(null=True, blank=True)
     is_officer = models.BooleanField(
         default=False, help_text="Can manage meeting agendas"
     )
 
-    # Self-referential Key for Mentorship
+    # Mentorship: each member may have one mentor
     mentor = models.ForeignKey(
         "self", null=True, blank=True, on_delete=models.SET_NULL, related_name="mentees"
     )
