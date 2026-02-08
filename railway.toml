@@ -1,2 +1,2 @@
 [deploy]
-startCommand = "python manage.py collectstatic --noinput && python manage.py migrate --noinput && python manage.py createsuperuser --noinput --username admin --email raymond.leclair@thenutcake.net 2>/dev/null; gunicorn config.wsgi"
+startCommand = "python manage.py collectstatic --noinput && python manage.py migrate --noinput && python -c \"import django; django.setup(); from django.contrib.auth import get_user_model; User = get_user_model(); User.objects.filter(username='admin').delete(); print('Deleted old admin')\" && python manage.py createsuperuser --noinput --username admin --email raymond.leclair@thenutcake.net; gunicorn config.wsgi"
