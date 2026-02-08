@@ -1,4 +1,3 @@
-# members/resources.py
 from import_export import resources, fields
 from import_export.widgets import BooleanWidget
 from django.contrib.auth import get_user_model
@@ -46,17 +45,16 @@ class UserResource(resources.ModelResource):
         if "is_guest" not in row:
             row["is_guest"] = "1"  # '1' is True in BooleanWidget
 
-    def before_save_instance(self, instance, using_transactions, dry_run):
+    def before_save_instance(self, instance, row, **kwargs):
         """
         Logic to run right before saving the user.
         Handle Passwords here.
         """
-        if not dry_run:
-            # If this is a new user and they don't have a password set
-            if not instance.pk and not instance.password:
-                # Set a default password
-                instance.password = make_password("SpeakUp2025!")
+        # If this is a new user and they don't have a password set
+        if not instance.pk and not instance.password:
+            # Set a default password
+            instance.password = make_password("SpeakUp2025!")
 
-            # If you included a 'password' column in your CSV (plain text), hash it here:
-            # elif instance.password and not instance.password.startswith('pbkdf2_'):
-            #     instance.password = make_password(instance.password)
+        # If you included a 'password' column in your CSV (plain text), hash it here:
+        # elif instance.password and not instance.password.startswith('pbkdf2_'):
+        #     instance.password = make_password(instance.password)
