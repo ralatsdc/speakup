@@ -1,3 +1,2 @@
 [deploy]
-startCommand = "gunicorn config.wsgi"
-releaseCommand = "python manage.py collectstatic --noinput && python manage.py migrate --noinput && python manage.py createsuperuser --noinput --username admin --email raymond.leclair@thenutcake.net 2>/dev/null; true"
+startCommand = "python manage.py collectstatic --noinput && python manage.py migrate --noinput && python manage.py createsuperuser --noinput --username admin --email raymond.leclair@thenutcake.net 2>/dev/null; gunicorn config.wsgi"
