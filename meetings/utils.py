@@ -1,17 +1,22 @@
+import logging
+
 from django.core.mail import send_mass_mail
 from django.conf import settings
 from django.urls import reverse
 from members.models import User
 
+logger = logging.getLogger(__name__)
 
-def send_meeting_reminders(meeting, domain="http://127.0.0.1:8000"):
+
+def send_meeting_reminders(meeting):
     """
     Sends two types of emails:
     1. To assigned people: "Don't forget your role!"
     2. To unassigned people: "We need help!"
     """
     messages = []
-    sender = settings.EMAIL_HOST_USER
+    sender = settings.DEFAULT_FROM_EMAIL
+    domain = settings.SITE_URL
 
     # 1. Remind Assigned People
     assignments = meeting.roles.filter(user__isnull=False)
@@ -56,16 +61,19 @@ def send_meeting_reminders(meeting, domain="http://127.0.0.1:8000"):
             )
             messages.append((subject, body, sender, [member.email]))
 
-    # Send all at once
-    return send_mass_mail(tuple(messages), fail_silently=False)
+    try:
+        return send_mass_mail(tuple(messages), fail_silently=False)
+    except Exception:
+        logger.exception("Failed to send meeting reminders for %s", meeting)
+        raise
 
 
-def send_meeting_feedback(meeting, domain="http://127.0.0.1:8000"):
+def send_meeting_feedback(meeting):
     """
     Sends individual emails to members who have 'admin_notes' on their role.
     """
     messages = []
-    sender = settings.EMAIL_HOST_USER
+    sender = settings.DEFAULT_FROM_EMAIL
 
     # Filter for roles that actually have feedback written
     roles_with_feedback = meeting.roles.exclude(admin_notes="").exclude(
@@ -93,6 +101,9 @@ def send_meeting_feedback(meeting, domain="http://127.0.0.1:8000"):
         messages.append((subject, body, sender, [user.email]))
         count += 1
 
-    # Send all emails in one connection
-    send_mass_mail(tuple(messages), fail_silently=False)
+    try:
+        send_mass_mail(tuple(messages), fail_silently=False)
+    except Exception:
+        logger.exception("Failed to send meeting feedback for %s", meeting)
+        raise
     return count

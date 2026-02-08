@@ -38,10 +38,25 @@
         <!-- Child templates inject content here -->
         {% endblock %}
     </div>
-    <!-- NEW: Listener for HTMX events -->
     <script>
-        document.body.addEventListener("showAlert", function(evt){
+        document.body.addEventListener("showAlert", function(evt) {
             alert(evt.detail.value);
+        });
+
+        document.addEventListener("click", function(evt) {
+            var btn = evt.target.closest(".note-toggle-btn");
+            if (btn) {
+                var id = btn.dataset.noteId;
+                document.getElementById("note-edit-" + id).classList.toggle("d-none");
+                document.getElementById("note-display-" + id).classList.toggle("d-none");
+                return;
+            }
+            btn = evt.target.closest(".note-cancel-btn");
+            if (btn) {
+                var id = btn.dataset.noteId;
+                document.getElementById("note-edit-" + id).classList.add("d-none");
+                document.getElementById("note-display-" + id).classList.remove("d-none");
+            }
         });
     </script>
 </body>

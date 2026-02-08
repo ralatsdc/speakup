@@ -2,6 +2,7 @@ from import_export import resources, fields
 from import_export.widgets import BooleanWidget
 from django.contrib.auth import get_user_model
 from django.contrib.auth.hashers import make_password
+from django.utils.crypto import get_random_string
 
 User = get_user_model()
 

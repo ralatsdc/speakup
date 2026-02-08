@@ -1,9 +1,6 @@
 from django.db import models
-from django.conf import settings
-from django.core.mail import send_mass_mail
-from django.contrib.auth import get_user_model
 
-User = get_user_model()
+from .utils import send_announcement
 
 
 class Announcement(models.Model):
@@ -23,31 +20,4 @@ class Announcement(models.Model):
         return self.subject
 
     def send(self):
-        """
-        Logic to filter users and send the email.
-        """
-        if self.audience == "officers":
-            recipients = User.objects.filter(is_officer=True, is_active=True)
-        elif self.audience == "guests":
-            recipients = User.objects.filter(is_guest=True, is_active=True)
-        else:
-            recipients = User.objects.filter(is_active=True)
-
-        # Prepare messages (Mass Mail is more efficient)
-        messages = []
-        sender = settings.EMAIL_HOST_USER
-
-        for user in recipients:
-            if user.email:
-                messages.append(
-                    (
-                        self.subject,
-                        self.body,
-                        sender,
-                        [user.email],
-                    )
-                )
-
-        # Send
-        count = send_mass_mail(tuple(messages), fail_silently=False)
-        return count
+        return send_announcement(self)

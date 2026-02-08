@@ -1,10 +1,10 @@
-import json  # Add this import at the top
+import json
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
+from django.core.paginator import Paginator
 from django.http import HttpResponseForbidden
 from django.shortcuts import get_object_or_404, render
-from django.shortcuts import render
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
@@ -13,6 +13,7 @@ from .models import Meeting, MeetingRole, Attendance
 User = get_user_model()
 
 
+@login_required
 def upcoming_meetings(request):
 
     # 1. Get current time to filter out old meetings
@@ -21,17 +22,16 @@ def upcoming_meetings(request):
     # 2. Query with optimization
     # prefetch_related is crucial here: it grabs the Roles and the Users
     # associated with those roles in the same DB transaction.
-    meetings = (
+    meetings_qs = (
         Meeting.objects.filter(date__gte=now)
         .order_by("date")
-        .prefetch_related(
-            "roles",  # The pivot table
-            "roles__role",  # The role definition (e.g., "Timer")
-            "roles__user",  # The assigned user
-        )
+        .prefetch_related("roles", "roles__role", "roles__user")
     )
 
-    return render(request, "meetings/upcoming.html", {"meetings": meetings})
+    paginator = Paginator(meetings_qs, 10)
+    page = paginator.get_page(request.GET.get("page"))
+
+    return render(request, "meetings/upcoming.html", {"meetings": page})
 
 
 @login_required

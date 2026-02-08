@@ -1,7 +1,11 @@
+import logging
+
 from django.db import models
 from django.conf import settings
-from django.db.models.signals import post_save  # Import signals
+from django.db.models.signals import post_save
 from django.dispatch import receiver
+
+logger = logging.getLogger(__name__)
 
 
 # 2. Existing Role Model (No changes needed)
@@ -71,17 +75,7 @@ class MeetingRole(models.Model):
     notes = models.TextField(blank=True, help_text="Speech title, project details, or feedback.")
     admin_notes = models.TextField(blank=True, help_text="Private feedback or details for the follow-up email.")
 
-    # We add an optional sorting field so "Speaker 1" stays above "Speaker 2"
     sort_order = models.PositiveIntegerField(default=0)
-
-    # If someone backs out, who fills in?
-    backup_user = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="backup_roles",
-    )
 
     def __str__(self):
         assigned = self.user.username if self.user else "OPEN"
@@ -102,23 +96,31 @@ class Attendance(models.Model):
 
     timestamp = models.DateTimeField(auto_now_add=True)
 
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["meeting", "user"],
+                condition=models.Q(user__isnull=False),
+                name="unique_member_attendance",
+            ),
+        ]
+
     def __str__(self):
         if self.user:
             return f"{self.user} @ {self.meeting}"
         return f"{self.guest_name} (Guest) @ {self.meeting}"
 
 
-# 4. The Automation Signal
-# This function runs every time you hit "Save" on a Meeting
 @receiver(post_save, sender=Meeting)
 def populate_meeting_roles(sender, instance, created, **kwargs):
     if created and instance.meeting_type:
-        # Loop through the defined items in the template
-        for item in instance.meeting_type.items.all():
-            # Create N copies of the role
-            for i in range(item.count):
-                MeetingRole.objects.create(
-                    meeting=instance,
-                    role=item.role,
-                    sort_order=item.order,  # Keep the agenda sorted!
-                )
+        try:
+            for item in instance.meeting_type.items.all():
+                for i in range(item.count):
+                    MeetingRole.objects.create(
+                        meeting=instance,
+                        role=item.role,
+                        sort_order=item.order,
+                    )
+        except Exception:
+            logger.exception("Failed to populate roles for meeting %s", instance)

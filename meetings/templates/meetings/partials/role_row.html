@@ -37,9 +37,10 @@
             <!-- 2. The Edit Icon (Only for Assignee or Officer) -->
             {% if assignment.user and user.is_authenticated %}
                 {% if assignment.user == user or user.is_officer %}
-                    <button class="btn btn-link btn-sm text-secondary p-0 ms-2" 
-                            onclick="document.getElementById('note-edit-{{ assignment.id }}').classList.toggle('d-none'); document.getElementById('note-display-{{ assignment.id }}').classList.toggle('d-none');"
-                            title="Edit Note / Speech Title">
+                    <button class="btn btn-link btn-sm text-secondary p-0 ms-2 note-toggle-btn"
+                            data-note-id="{{ assignment.id }}"
+                            title="Edit Note / Speech Title"
+                            aria-label="Edit note for {{ assignment.role.name }}">
                         ✏️
                     </button>
                 {% endif %}
@@ -61,8 +62,8 @@
                       hx-swap="outerHTML">
                     <textarea name="note_content" class="form-control form-control-sm mb-1" rows="2" placeholder="Speech Title or Notes...">{{ assignment.notes }}</textarea>
                     <button type="submit" class="btn btn-success btn-sm py-0 px-2">Save</button>
-                    <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-2" 
-                            onclick="document.getElementById('note-edit-{{ assignment.id }}').classList.add('d-none'); document.getElementById('note-display-{{ assignment.id }}').classList.remove('d-none');">
+                    <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-2 note-cancel-btn"
+                            data-note-id="{{ assignment.id }}">
                         Cancel
                     </button>
                 </form>

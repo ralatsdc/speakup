@@ -34,16 +34,14 @@ SECRET_KEY = os.getenv(
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv("DEBUG", "False") == "True"
 
-# Distinguish between debugging and deploying
-DEPLOY = os.getenv("DEPLOY", "False") == "True"
+DEPLOY = not DEBUG
 
 
 # Allowed hosts
 if not DEPLOY:
     ALLOWED_HOSTS = []
 else:
-    # Expected by Railway
-    ALLOWED_HOSTS = ["*"]
+    ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "*").split(",")
 
     # Trust requests coming from your Railway URL.
     # Replace the string below if you use a custom domain.
@@ -123,18 +121,12 @@ WSGI_APPLICATION = "config.wsgi.application"
 # Database
 # https://docs.djangoproject.com/en/4.2/ref/settings/#databases
 
-# Email configuration for development
 DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
-    }
+    "default": dj_database_url.config(
+        default=f"sqlite:///{BASE_DIR / 'db.sqlite3'}",
+        conn_max_age=600,
+    )
 }
-
-# Email configuration for production
-# DATABASES = {
-#     "default": dj_database_url.config(default="sqlite:///db.sqlite3", conn_max_age=600)
-# }
 
 
 # Set the custom user model
@@ -172,12 +164,9 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/4.2/howto/static-files/
 STATIC_URL = "static/"
-STATIC_ROOT = BASE_DIR / "staticfiles"  # Where files go in production
-# Prevent the "No directory" crash on Railway
-if DEPLOY and not os.path.exists(STATIC_ROOT):
-    os.makedirs(STATIC_ROOT)
+STATIC_ROOT = BASE_DIR / "staticfiles"
 
-    # Enable Whitenoise storage for production
+if DEPLOY:
     STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 
 
@@ -189,15 +178,15 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # Ensure CSV is the default import and export format
 IMPORT_EXPORT_FORMATS = [CSV]
 
-# Email configuration for development
-# EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
-# EMAIL_HOST_USER = "officers@speakup.com"  # Default "From" address
+if DEBUG:
+    EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+else:
+    EMAIL_BACKEND = "anymail.backends.brevo.EmailBackend"
+    ANYMAIL = {
+        "BREVO_API_KEY": os.getenv("BREVO_API_KEY"),
+    }
 
-# Email configuration for production
-EMAIL_BACKEND = "anymail.backends.brevo.EmailBackend"
-BREVO_API_KEY = os.getenv("BREVO_API_KEY")
-ANYMAIL = {
-    "BREVO_API_KEY": BREVO_API_KEY,
-}
 DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "noreply@speakup.com")
-SERVER_EMAIL = DEFAULT_FROM_EMAIL  # Error messages come from here
+SERVER_EMAIL = DEFAULT_FROM_EMAIL
+
+SITE_URL = os.getenv("SITE_URL", "http://127.0.0.1:8000")
