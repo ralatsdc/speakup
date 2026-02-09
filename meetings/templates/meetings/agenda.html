@@ -1,0 +1,79 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <!-- Header -->
+        <div class="text-center mb-4">
+            <h1 class="display-6">Speak Up Cambridge</h1>
+            <h2 class="text-primary">Meeting Agenda</h2>
+            <h3>{{ meeting.date|date:"l, F jS, Y" }}</h3>
+            <p class="text-muted">{{ meeting.date|date:"g:i A" }}</p>
+        </div>
+
+        <!-- Theme & Word of the Day -->
+        {% if meeting.theme or meeting.word_of_the_day %}
+        <div class="card shadow-sm mb-4">
+            <div class="card-body text-center">
+                {% if meeting.theme %}
+                    <p class="mb-1"><strong>Theme:</strong> {{ meeting.theme }}</p>
+                {% endif %}
+                {% if meeting.word_of_the_day %}
+                    <p class="mb-0"><strong>Word of the Day:</strong> {{ meeting.word_of_the_day }}</p>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Roles Table -->
+        <div class="card shadow-sm mb-4">
+            <div class="card-body p-0">
+                <table class="table table-striped mb-0">
+                    <thead class="table-primary">
+                        <tr>
+                            <th style="width: 30%;">Role</th>
+                            <th style="width: 35%;">Member</th>
+                            <th style="width: 35%;">Notes</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for assignment in roles %}
+                        <tr>
+                            <td class="fw-bold">{{ assignment.role.name }}</td>
+                            <td>
+                                {% if assignment.user %}
+                                    {{ assignment.user.first_name }} {{ assignment.user.last_name }}
+                                {% else %}
+                                    <span class="text-muted fst-italic">(Open)</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if assignment.notes %}
+                                    <em>{{ assignment.notes }}</em>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Zoom Link -->
+        {% if meeting.zoom_link %}
+        <div class="text-center mb-4">
+            <a href="{{ meeting.zoom_link }}" class="btn btn-outline-primary" target="_blank">
+                Join via Zoom
+            </a>
+        </div>
+        {% endif %}
+
+        <!-- Download Button -->
+        <div class="text-center mb-4">
+            <a href="{% url 'meeting_agenda_download' meeting.id %}" class="btn btn-secondary">
+                Download Agenda (.docx)
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -7,6 +7,13 @@ urlpatterns = [
     # Role signups
     path("role/<int:role_id>/toggle/", views.toggle_role, name="toggle_role"),
     path("role/<int:role_id>/note/", views.save_role_note, name="save_role_note"),
+    # Meeting agenda (public)
+    path("meeting/<int:meeting_id>/agenda/", views.meeting_agenda, name="meeting_agenda"),
+    path(
+        "meeting/<int:meeting_id>/agenda/download/",
+        views.meeting_agenda_download,
+        name="meeting_agenda_download",
+    ),
     # Kiosk Routes
     path("kiosk/", views.checkin_kiosk, name="checkin_kiosk"),
     path(
