@@ -1,6 +1,7 @@
 import base64
 import io
 import json
+from pathlib import Path
 
 import qrcode
 import qrcode.constants
@@ -14,7 +15,8 @@ from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 from docx import Document
-from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+AGENDA_TEMPLATE = Path(__file__).parent / "agenda_template.docx"
 
 from .models import Meeting, MeetingRole, Attendance
 
@@ -47,34 +49,62 @@ def meeting_agenda(request, meeting_id):
     )
 
 
+def _replace_in_paragraph(paragraph, placeholder, replacement):
+    """Replace placeholder text in a paragraph, handling Word's run-splitting."""
+    full_text = "".join(run.text for run in paragraph.runs)
+    if placeholder not in full_text:
+        return False
+    new_text = full_text.replace(placeholder, replacement)
+    # Put all text in the first run (preserves its formatting), clear the rest
+    for i, run in enumerate(paragraph.runs):
+        run.text = new_text if i == 0 else ""
+    return True
+
+
+def _remove_paragraph(paragraph):
+    """Remove a paragraph element from the document XML."""
+    p = paragraph._element
+    p.getparent().remove(p)
+
+
 def meeting_agenda_download(request, meeting_id):
     """Public endpoint: download the meeting agenda as a Word document."""
     meeting = get_object_or_404(Meeting, id=meeting_id)
     roles = meeting.roles.select_related("role", "user").order_by("sort_order", "id")
 
-    doc = Document()
+    doc = Document(AGENDA_TEMPLATE)
 
-    title = doc.add_heading("Speak Up Cambridge", level=0)
-    title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    # Required placeholders — always replaced
+    replacements = {
+        "{{DATE}}": meeting.date.strftime("%A, %B %d, %Y"),
+        "{{TIME}}": meeting.date.strftime("%I:%M %p"),
+    }
 
-    date_heading = doc.add_heading(
-        meeting.date.strftime("%A, %B %d, %Y at %I:%M %p"), level=1
-    )
-    date_heading.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    # Optional placeholders — entire paragraph removed when empty
+    optional = {
+        "{{THEME}}": meeting.theme,
+        "{{WORD_OF_THE_DAY}}": meeting.word_of_the_day,
+        "{{ZOOM_LINK}}": meeting.zoom_link,
+    }
 
-    if meeting.theme:
-        doc.add_paragraph(f"Theme: {meeting.theme}")
-    if meeting.word_of_the_day:
-        doc.add_paragraph(f"Word of the Day: {meeting.word_of_the_day}")
+    paragraphs_to_remove = []
+    for paragraph in doc.paragraphs:
+        for placeholder, value in replacements.items():
+            _replace_in_paragraph(paragraph, placeholder, value)
 
-    # Roles table
-    table = doc.add_table(rows=1, cols=3)
-    table.style = "Table Grid"
-    hdr_cells = table.rows[0].cells
-    hdr_cells[0].text = "Role"
-    hdr_cells[1].text = "Member"
-    hdr_cells[2].text = "Notes"
+        for placeholder, value in optional.items():
+            full_text = "".join(run.text for run in paragraph.runs)
+            if placeholder in full_text:
+                if value:
+                    _replace_in_paragraph(paragraph, placeholder, value)
+                else:
+                    paragraphs_to_remove.append(paragraph)
 
+    for p in paragraphs_to_remove:
+        _remove_paragraph(p)
+
+    # Populate the roles table (first table in the template)
+    table = doc.tables[0]
     for assignment in roles:
         row_cells = table.add_row().cells
         row_cells[0].text = assignment.role.name
@@ -85,10 +115,6 @@ def meeting_agenda_download(request, meeting_id):
         else:
             row_cells[1].text = "(Open)"
         row_cells[2].text = assignment.notes or ""
-
-    if meeting.zoom_link:
-        doc.add_paragraph()
-        doc.add_paragraph(f"Zoom Link: {meeting.zoom_link}")
 
     buffer = io.BytesIO()
     doc.save(buffer)
