@@ -74,15 +74,21 @@ class MeetingAdmin(admin.ModelAdmin):
         from .utils import send_meeting_feedback
 
         meeting = self.get_object(request, meeting_id)
-        count = send_meeting_feedback(meeting)
+        feedback_count, guest_count = send_meeting_feedback(meeting)
 
-        if count > 0:
+        parts = []
+        if feedback_count:
+            parts.append(f"feedback to {feedback_count} members")
+        if guest_count:
+            parts.append(f"thank-you to {guest_count} guests")
+
+        if parts:
             self.message_user(
-                request, f"Sent feedback emails to {count} members.", messages.SUCCESS
+                request, f"Sent {', '.join(parts)}.", messages.SUCCESS
             )
         else:
             self.message_user(
-                request, "No feedback notes found to send.", messages.WARNING
+                request, "No feedback or guest emails to send.", messages.WARNING
             )
 
         return HttpResponseRedirect(f"../../{meeting_id}/change/")

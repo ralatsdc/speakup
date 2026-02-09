@@ -201,14 +201,40 @@ class EmailUtilsTest(TestCase):
 
         self.assignment.admin_notes = "Great job!"
         self.assignment.save()
-        count = send_meeting_feedback(self.meeting)
-        self.assertEqual(count, 1)
+        feedback_count, guest_count = send_meeting_feedback(self.meeting)
+        self.assertEqual(feedback_count, 1)
+        self.assertEqual(guest_count, 0)
         mock_send.assert_called_once()
 
     @patch("meetings.utils.send_mass_mail")
     def test_send_feedback_no_notes(self, mock_send):
         from .utils import send_meeting_feedback
 
-        count = send_meeting_feedback(self.meeting)
-        self.assertEqual(count, 0)
+        feedback_count, guest_count = send_meeting_feedback(self.meeting)
+        self.assertEqual(feedback_count, 0)
+        self.assertEqual(guest_count, 0)
         mock_send.assert_called_once()
+
+    @patch("meetings.utils.send_mass_mail")
+    def test_send_feedback_includes_guest_user(self, mock_send):
+        from .utils import send_meeting_feedback
+
+        guest = User.objects.create_user(
+            username="guest1", password="pass", email="guest@example.com",
+            first_name="Bob", is_guest=True,
+        )
+        Attendance.objects.create(meeting=self.meeting, user=guest)
+        feedback_count, guest_count = send_meeting_feedback(self.meeting)
+        self.assertEqual(feedback_count, 0)
+        self.assertEqual(guest_count, 1)
+
+    @patch("meetings.utils.send_mass_mail")
+    def test_send_feedback_includes_walkin_guest(self, mock_send):
+        from .utils import send_meeting_feedback
+
+        Attendance.objects.create(
+            meeting=self.meeting, guest_name="Walk-in Jane", guest_email="jane@example.com"
+        )
+        feedback_count, guest_count = send_meeting_feedback(self.meeting)
+        self.assertEqual(feedback_count, 0)
+        self.assertEqual(guest_count, 1)

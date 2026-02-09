@@ -2,6 +2,7 @@ import logging
 
 from django.core.mail import send_mass_mail
 from django.conf import settings
+from django.db import models
 from django.urls import reverse
 from members.models import User
 
@@ -69,12 +70,15 @@ def send_meeting_reminders(meeting):
 
 def send_meeting_feedback(meeting):
     """
-    Sends individual emails to members who have 'admin_notes' on their role.
+    Sends two types of post-meeting emails:
+    1. Role feedback to members who have 'admin_notes' on their role.
+    2. Thank-you emails to guests who attended.
     """
     messages = []
     sender = settings.DEFAULT_FROM_EMAIL
+    meeting_date = meeting.date.strftime("%A, %B %d")
 
-    # Only send to roles where an officer wrote admin_notes
+    # Role feedback for members with admin_notes
     roles_with_feedback = meeting.roles.exclude(admin_notes="").exclude(
         user__isnull=True
     )
@@ -88,7 +92,7 @@ def send_meeting_feedback(meeting):
         subject = f"Feedback: Your role as {assignment.role.name}"
         body = (
             f"Hi {user.first_name},\n\n"
-            f"Thank you for taking the role of **{assignment.role.name}** at our meeting on {meeting.date.date()}.\n\n"
+            f"Thank you for taking the role of **{assignment.role.name}** at our meeting on {meeting_date}.\n\n"
             f"Here are the notes/feedback regarding your role:\n"
             f"----------------------------------------------------\n"
             f"{assignment.admin_notes}\n"
@@ -100,9 +104,39 @@ def send_meeting_feedback(meeting):
         messages.append((subject, body, sender, [user.email]))
         count += 1
 
+    # Thank-you emails to guests
+    guest_attendances = meeting.attendances.filter(
+        models.Q(user__is_guest=True) | models.Q(user__isnull=True, guest_email__gt="")
+    )
+
+    guest_count = 0
+    for attendance in guest_attendances:
+        if attendance.user:
+            name = attendance.user.first_name
+            email = attendance.user.email
+        else:
+            name = attendance.guest_name or "Guest"
+            email = attendance.guest_email
+
+        if not email:
+            continue
+
+        subject = f"Thanks for visiting SpeakUp on {meeting_date}!"
+        body = (
+            f"Hi {name},\n\n"
+            f"Thank you for joining us at our meeting on {meeting_date}! "
+            f"We hope you enjoyed the experience.\n\n"
+            f"We'd love to see you again at our next meeting. "
+            f"Feel free to reply to this email if you have any questions.\n\n"
+            f"SpeakUp Team"
+        )
+
+        messages.append((subject, body, sender, [email]))
+        guest_count += 1
+
     try:
         send_mass_mail(tuple(messages), fail_silently=False)
     except Exception:
         logger.exception("Failed to send meeting feedback for %s", meeting)
         raise
-    return count
+    return count, guest_count
