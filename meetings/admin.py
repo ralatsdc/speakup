@@ -1,4 +1,6 @@
+from django import forms
 from django.contrib import admin, messages
+from django.db import models
 from django.http import HttpResponseRedirect
 from django.urls import path
 
@@ -26,6 +28,9 @@ class MeetingRoleInline(admin.TabularInline):
     extra = 0
     autocomplete_fields = ["user"]
     fields = ("role", "user", "notes", "admin_notes", "sort_order")
+    formfield_overrides = {
+        models.TextField: {"widget": forms.Textarea(attrs={"rows": 2, "cols": 30})},
+    }
 
 
 @admin.register(Meeting)
