@@ -15,8 +15,11 @@ from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 from docx import Document
+from docx.enum.text import WD_ALIGN_PARAGRAPH
 
-AGENDA_TEMPLATE = Path(__file__).parent / "agenda_template.docx"
+AGENDA_TEMPLATE = (
+    Path(__file__).parent / "templates" / "meetings" / "agenda" / "agenda_template.docx"
+)
 
 from .models import Meeting, MeetingRole, Attendance
 
@@ -44,9 +47,7 @@ def meeting_agenda(request, meeting_id):
     """Public page: presentable meeting agenda with roles and notes."""
     meeting = get_object_or_404(Meeting, id=meeting_id)
     roles = meeting.roles.select_related("role", "user").order_by("sort_order", "id")
-    return render(
-        request, "meetings/agenda.html", {"meeting": meeting, "roles": roles}
-    )
+    return render(request, "meetings/agenda.html", {"meeting": meeting, "roles": roles})
 
 
 def _replace_in_paragraph(paragraph, placeholder, replacement):
@@ -108,13 +109,16 @@ def meeting_agenda_download(request, meeting_id):
     for assignment in roles:
         row_cells = table.add_row().cells
         row_cells[0].text = assignment.role.name
+        row_cells[0].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.RIGHT
         if assignment.user:
             row_cells[1].text = (
                 f"{assignment.user.first_name} {assignment.user.last_name}"
             )
         else:
             row_cells[1].text = "(Open)"
+        row_cells[1].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
         row_cells[2].text = assignment.notes or ""
+        row_cells[2].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.LEFT
 
     buffer = io.BytesIO()
     doc.save(buffer)
@@ -222,12 +226,14 @@ def checkin_kiosk(request):
         qr_data_uri = _generate_qr_data_uri(kiosk_url)
         agenda_url = reverse("meeting_agenda", args=[meeting.id])
 
-        context.update({
-            "members": members,
-            "checked_in_ids": checked_in_ids,
-            "qr_data_uri": qr_data_uri,
-            "agenda_url": agenda_url,
-        })
+        context.update(
+            {
+                "members": members,
+                "checked_in_ids": checked_in_ids,
+                "qr_data_uri": qr_data_uri,
+                "agenda_url": agenda_url,
+            }
+        )
 
     return render(request, "meetings/kiosk.html", context)
 
