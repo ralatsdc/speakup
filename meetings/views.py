@@ -72,10 +72,7 @@ def meeting_agenda_download(request, meeting_id):
     meeting = get_object_or_404(Meeting, id=meeting_id)
     roles = meeting.roles.select_related("role", "user").order_by("sort_order", "id")
 
-    if meeting.meeting_type and meeting.meeting_type.agenda_template:
-        doc = Document(meeting.meeting_type.agenda_template)
-    else:
-        doc = Document(AGENDA_TEMPLATE)
+    doc = Document(AGENDA_TEMPLATE)
 
     # Required placeholders — always replaced
     replacements = {

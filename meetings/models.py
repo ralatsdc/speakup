@@ -23,11 +23,6 @@ class MeetingType(models.Model):
     """A reusable template that defines which roles a meeting needs (e.g. "Regular Meeting")."""
 
     name = models.CharField(max_length=100)
-    agenda_template = models.FileField(
-        upload_to="agenda_templates/",
-        blank=True,
-        help_text="Word (.docx) template for this meeting type's agenda. Leave blank to use the default.",
-    )
 
     def __str__(self):
         return self.name
