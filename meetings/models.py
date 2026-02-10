@@ -36,6 +36,7 @@ class MeetingTypeItem(models.Model):
     )
     role = models.ForeignKey(Role, on_delete=models.CASCADE)
     count = models.PositiveIntegerField(default=1, help_text="How many of this role?")
+    default_note = models.TextField(blank=True, help_text="Pre-filled note for this role when a meeting is created.")
     order = models.PositiveIntegerField(default=0, help_text="Order in the agenda")
 
     class Meta:
@@ -123,6 +124,7 @@ def populate_meeting_roles(sender, instance, created, **kwargs):
                     MeetingRole.objects.create(
                         meeting=instance,
                         role=item.role,
+                        notes=item.default_note,
                         sort_order=item.order,
                     )
         except Exception:

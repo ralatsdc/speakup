@@ -16,6 +16,9 @@ class RoleAdmin(admin.ModelAdmin):
 class MeetingTypeItemInline(admin.TabularInline):
     model = MeetingTypeItem
     extra = 1
+    formfield_overrides = {
+        models.TextField: {"widget": forms.Textarea(attrs={"rows": 2, "cols": 30})},
+    }
 
 
 @admin.register(MeetingType)
