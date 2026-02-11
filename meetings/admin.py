@@ -4,13 +4,26 @@ from django.db import models
 from django.http import HttpResponseRedirect
 from django.urls import path
 
-from .models import Meeting, Role, MeetingRole, MeetingType, MeetingTypeItem, Attendance
+from .models import Meeting, MeetingSession, Role, MeetingRole, MeetingType, MeetingTypeItem, MeetingTypeSession, Session, Attendance
 from .utils import send_meeting_reminders
 
 
 @admin.register(Role)
 class RoleAdmin(admin.ModelAdmin):
     list_display = ("name", "is_speech_role", "points", "time_minutes", "in_person")
+
+
+@admin.register(Session)
+class SessionAdmin(admin.ModelAdmin):
+    list_display = ("name", "duration_minutes", "takes_roles")
+
+
+class MeetingTypeSessionInline(admin.TabularInline):
+    model = MeetingTypeSession
+    extra = 1
+    formfield_overrides = {
+        models.TextField: {"widget": forms.Textarea(attrs={"rows": 2, "cols": 30})},
+    }
 
 
 class MeetingTypeItemInline(admin.TabularInline):
@@ -20,17 +33,30 @@ class MeetingTypeItemInline(admin.TabularInline):
         models.TextField: {"widget": forms.Textarea(attrs={"rows": 2, "cols": 30})},
     }
 
+    def formfield_for_foreignkey(self, db_field, request, **kwargs):
+        if db_field.name == "session":
+            kwargs["queryset"] = Session.objects.filter(takes_roles=True)
+        return super().formfield_for_foreignkey(db_field, request, **kwargs)
+
 
 @admin.register(MeetingType)
 class MeetingTypeAdmin(admin.ModelAdmin):
-    inlines = [MeetingTypeItemInline]
+    inlines = [MeetingTypeSessionInline, MeetingTypeItemInline]
+
+
+class MeetingSessionInline(admin.TabularInline):
+    model = MeetingSession
+    extra = 0
+    formfield_overrides = {
+        models.TextField: {"widget": forms.Textarea(attrs={"rows": 2, "cols": 30})},
+    }
 
 
 class MeetingRoleInline(admin.TabularInline):
     model = MeetingRole
     extra = 0
     autocomplete_fields = ["user"]
-    fields = ("role", "user", "notes", "admin_notes", "sort_order")
+    fields = ("role", "session", "user", "notes", "admin_notes", "sort_order")
     formfield_overrides = {
         models.TextField: {"widget": forms.Textarea(attrs={"rows": 2, "cols": 30})},
     }
@@ -39,7 +65,7 @@ class MeetingRoleInline(admin.TabularInline):
 @admin.register(Meeting)
 class MeetingAdmin(admin.ModelAdmin):
     list_display = ("date", "meeting_type", "theme", "role_count_status")
-    inlines = [MeetingRoleInline]
+    inlines = [MeetingSessionInline, MeetingRoleInline]
     change_form_template = "meetings/admin/meeting_change_form.html"
 
     def role_count_status(self, obj):

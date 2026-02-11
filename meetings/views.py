@@ -43,11 +43,51 @@ def _generate_qr_data_uri(url):
     return f"data:image/png;base64,{encoded}"
 
 
+def _build_agenda_sections(meeting):
+    """Build an ordered list of agenda sections from the meeting's sessions.
+
+    Returns a list of dicts:
+        {"session": Session, "note": str, "roles": [MeetingRole, ...]}
+    Sessions with takes_roles=False will have an empty roles list.
+    Roles not assigned to any session are grouped in a final None section.
+    """
+    roles = list(
+        meeting.roles.select_related("role", "user", "session").order_by("sort_order", "id")
+    )
+
+    meeting_sessions = (
+        meeting.meeting_sessions.select_related("session").order_by("sort_order")
+    )
+
+    if not meeting_sessions:
+        return [{"session": None, "note": "", "roles": roles}]
+
+    sections = []
+    used_role_ids = set()
+    for ms in meeting_sessions:
+        session = ms.session
+        if session.takes_roles:
+            session_roles = [r for r in roles if r.session_id == session.id]
+            used_role_ids.update(r.id for r in session_roles)
+        else:
+            session_roles = []
+        sections.append({"session": session, "note": ms.note, "roles": session_roles})
+
+    # Roles not assigned to any session
+    unassigned = [r for r in roles if r.id not in used_role_ids]
+    if unassigned:
+        sections.append({"session": None, "note": "", "roles": unassigned})
+
+    return sections
+
+
 def meeting_agenda(request, meeting_id):
     """Public page: presentable meeting agenda with roles and notes."""
     meeting = get_object_or_404(Meeting, id=meeting_id)
-    roles = meeting.roles.select_related("role", "user").order_by("sort_order", "id")
-    return render(request, "meetings/agenda.html", {"meeting": meeting, "roles": roles})
+    sections = _build_agenda_sections(meeting)
+    return render(
+        request, "meetings/agenda.html", {"meeting": meeting, "sections": sections}
+    )
 
 
 def _replace_in_paragraph(paragraph, placeholder, replacement):

@@ -21,6 +21,17 @@ class Role(models.Model):
         return self.name
 
 
+class Session(models.Model):
+    """A reusable meeting segment (e.g. Table Topics, Prepared Speeches, Break)."""
+
+    name = models.CharField(max_length=100)
+    duration_minutes = models.PositiveIntegerField(default=0, help_text="Expected duration in minutes")
+    takes_roles = models.BooleanField(default=True, help_text="Uncheck for breaks or segments that don't have assigned roles")
+
+    def __str__(self):
+        return self.name
+
+
 class MeetingType(models.Model):
     """A reusable template that defines which roles a meeting needs (e.g. "Regular Meeting")."""
 
@@ -30,11 +41,32 @@ class MeetingType(models.Model):
         return self.name
 
 
+class MeetingTypeSession(models.Model):
+    """Links a Session to a MeetingType with ordering."""
+
+    meeting_type = models.ForeignKey(
+        MeetingType, on_delete=models.CASCADE, related_name="sessions"
+    )
+    session = models.ForeignKey(Session, on_delete=models.CASCADE)
+    note = models.TextField(blank=True)
+    order = models.PositiveIntegerField(default=0, help_text="Order in the agenda")
+
+    class Meta:
+        ordering = ["order"]
+
+    def __str__(self):
+        return f"{self.meeting_type}: {self.session}"
+
+
 class MeetingTypeItem(models.Model):
     """One line in a MeetingType template: 'this meeting needs N of this role'."""
 
     meeting_type = models.ForeignKey(
         MeetingType, on_delete=models.CASCADE, related_name="items"
+    )
+    session = models.ForeignKey(
+        Session, on_delete=models.SET_NULL, null=True, blank=True,
+        help_text="Which session this role belongs to",
     )
     role = models.ForeignKey(Role, on_delete=models.CASCADE)
     count = models.PositiveIntegerField(default=1, help_text="How many of this role?")
@@ -64,11 +96,27 @@ class Meeting(models.Model):
         return f"{self.date.strftime('%Y-%m-%d')} ({self.meeting_type})"
 
 
+class MeetingSession(models.Model):
+    """A session instance for a specific Meeting, populated from the MeetingType template."""
+
+    meeting = models.ForeignKey(Meeting, on_delete=models.CASCADE, related_name="meeting_sessions")
+    session = models.ForeignKey(Session, on_delete=models.CASCADE)
+    note = models.TextField(blank=True)
+    sort_order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ["sort_order"]
+
+    def __str__(self):
+        return f"{self.meeting} - {self.session}"
+
+
 class MeetingRole(models.Model):
     """Assigns a User to a Role for a specific Meeting."""
 
     meeting = models.ForeignKey(Meeting, on_delete=models.CASCADE, related_name="roles")
     role = models.ForeignKey(Role, on_delete=models.PROTECT)
+    session = models.ForeignKey(Session, on_delete=models.SET_NULL, null=True, blank=True)
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -117,17 +165,25 @@ class Attendance(models.Model):
 
 
 @receiver(post_save, sender=Meeting)
-def populate_meeting_roles(sender, instance, created, **kwargs):
-    """Auto-create MeetingRole rows from the MeetingType template when a new Meeting is saved."""
+def populate_meeting_from_type(sender, instance, created, **kwargs):
+    """Auto-create MeetingSession and MeetingRole rows from the MeetingType template."""
     if created and instance.meeting_type:
         try:
+            for mts in instance.meeting_type.sessions.select_related("session"):
+                MeetingSession.objects.create(
+                    meeting=instance,
+                    session=mts.session,
+                    note=mts.note,
+                    sort_order=mts.order,
+                )
             for item in instance.meeting_type.items.all():
                 for i in range(item.count):
                     MeetingRole.objects.create(
                         meeting=instance,
                         role=item.role,
+                        session=item.session,
                         notes=item.default_note,
                         sort_order=item.order,
                     )
         except Exception:
-            logger.exception("Failed to populate roles for meeting %s", instance)
+            logger.exception("Failed to populate meeting %s from type", instance)
