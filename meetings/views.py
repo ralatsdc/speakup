@@ -16,6 +16,7 @@ from django.utils import timezone
 from django.views.decorators.http import require_POST
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.shared import Pt
 
 AGENDA_TEMPLATE = (
     Path(__file__).parent / "templates" / "meetings" / "agenda" / "agenda_template.docx"
@@ -52,11 +53,13 @@ def _build_agenda_sections(meeting):
     Roles not assigned to any session are grouped in a final None section.
     """
     roles = list(
-        meeting.roles.select_related("role", "user", "session").order_by("sort_order", "id")
+        meeting.roles.select_related("role", "user", "session").order_by(
+            "sort_order", "id"
+        )
     )
 
-    meeting_sessions = (
-        meeting.meeting_sessions.select_related("session").order_by("sort_order")
+    meeting_sessions = meeting.meeting_sessions.select_related("session").order_by(
+        "sort_order"
     )
 
     if not meeting_sessions:
@@ -147,52 +150,68 @@ def meeting_agenda_download(request, meeting_id):
     sections = _build_agenda_sections(meeting)
     table = doc.tables[0]
 
+    first = True
     for section in sections:
         session = section["session"]
-        if section == sections[0]:
+        if first:
             row_cells = table.rows[0].cells
+            first = False
         else:
             row_cells = table.add_row().cells
 
         # Cell 0: session name, duration, and notes
+        c = row_cells[0]
+        p1 = c.paragraphs[0]
+        p1.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        p1.paragraph_format.space_before = Pt(6)
         if session:
-            parts = [session.name]
+            r = p1.add_run(session.name)
+            if session.duration_minutes or section["note"]:
+                p2 = c.add_paragraph()
+                p2.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+                p2.paragraph_format.space_after = Pt(6)
             if session.duration_minutes:
-                parts.append(f"{session.duration_minutes} min")
+                p2.add_run(f"{session.duration_minutes} min")
             if section["note"]:
-                parts.append(section["note"])
-            row_cells[0].text = parts[0]
-            for extra in parts[1:]:
-                row_cells[0].add_paragraph(extra)
+                p2.add_run(section["note"])
         else:
-            row_cells[0].text = "Other"
+            r = p1.add_run("Other")
+        r.bold = True
 
-        # Cell 1: two paragraphs per role (name: member, then [L]/[R] time note)
+        # Cell 1: two paragraphs per role (name: member, then [L]/[R] time - note)
+        c = row_cells[1]
         if section["roles"]:
             first = True
             for assignment in section["roles"]:
                 # Role + member paragraph
                 if first:
-                    p = row_cells[1].paragraphs[0]
+                    p = c.paragraphs[0]
+                    p.paragraph_format.space_before = Pt(6)
                     first = False
                 else:
-                    p = row_cells[1].add_paragraph()
+                    p = c.add_paragraph()
                 member = (
                     f"{assignment.user.first_name} {assignment.user.last_name}"
                     if assignment.user
                     else "(Open)"
                 )
-                p.text = f"{assignment.role.name}: {member}"
+                r = p.add_run(f"{assignment.role.name}:")
+                r.bold = True
+                p.add_run(f"{member}")
 
                 # Detail paragraph: [L]/[R], time in minutes, note
-                detail_parts = ["[L]" if assignment.in_person else "[R]"]
+                p = c.add_paragraph()
+                p.add_run("[L]" if assignment.in_person else "[R]")
                 if assignment.time_minutes:
-                    detail_parts.append(f"{assignment.time_minutes} min")
+                    p.add_run(f"{assignment.time_minutes} min")
                 if assignment.notes:
-                    detail_parts.append(assignment.notes)
-                row_cells[1].add_paragraph(" ".join(detail_parts))
+                    p.add_run(assignment.notes)
+            p.paragraph_format.space_after = Pt(6)
         elif session and not session.takes_roles:
-            row_cells[1].text = "Break"
+            p = c.paragraphs[0]
+            p.paragraph_format.space_before = Pt(6)
+            p.paragraph_format.space_after = Pt(6)
+            p.add_run("Break")
 
     buffer = io.BytesIO()
     doc.save(buffer)
