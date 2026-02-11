@@ -66,6 +66,8 @@ class MeetingRoleInline(admin.TabularInline):
         formfield = super().formfield_for_foreignkey(db_field, request, **kwargs)
         if db_field.name in ("session", "role"):
             formfield.widget.attrs["style"] = "width: 10em;"
+        if db_field.name == "user":
+            formfield.widget.attrs["style"] = "width: 10em;"
         return formfield
 
 
