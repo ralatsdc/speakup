@@ -56,7 +56,7 @@ class MeetingRoleInline(admin.TabularInline):
     model = MeetingRole
     extra = 0
     autocomplete_fields = ["user"]
-    fields = ("role", "session", "user", "notes", "admin_notes", "sort_order")
+    fields = ("session", "role", "user", "notes", "admin_notes", "sort_order")
     formfield_overrides = {
         models.TextField: {"widget": forms.Textarea(attrs={"rows": 2, "cols": 30})},
     }
