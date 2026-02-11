@@ -10,7 +10,7 @@ from .utils import send_meeting_reminders
 
 @admin.register(Role)
 class RoleAdmin(admin.ModelAdmin):
-    list_display = ("name", "is_speech_role", "points")
+    list_display = ("name", "is_speech_role", "points", "time_minutes", "in_person")
 
 
 class MeetingTypeItemInline(admin.TabularInline):

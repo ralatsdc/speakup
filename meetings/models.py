@@ -14,6 +14,8 @@ class Role(models.Model):
     name = models.CharField(max_length=100)
     is_speech_role = models.BooleanField(default=False)
     points = models.IntegerField(default=1, help_text="Points for difficulty/effort")
+    time_minutes = models.PositiveIntegerField(default=0, help_text="Expected duration in minutes")
+    in_person = models.BooleanField(default=True, help_text="Uncheck for roles that can be done remotely")
 
     def __str__(self):
         return self.name
