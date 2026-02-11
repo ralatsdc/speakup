@@ -143,50 +143,56 @@ def meeting_agenda_download(request, meeting_id):
     for p in paragraphs_to_remove:
         _remove_paragraph(p)
 
-    # Populate the roles table grouped by session (first table in the template)
+    # Populate the 2-column table (session | roles)
     sections = _build_agenda_sections(meeting)
     table = doc.tables[0]
+
     for section in sections:
         session = section["session"]
+        if section == sections[0]:
+            row_cells = table.rows[0].cells
+        else:
+            row_cells = table.add_row().cells
 
+        # Cell 0: session name, duration, and notes
         if session:
-            # Session header row — merged across all columns
-            header_cells = table.add_row().cells
-            header_cells[0].merge(header_cells[-1])
-            label = session.name
+            parts = [session.name]
             if session.duration_minutes:
-                label += f" ({session.duration_minutes} min)"
-            header_cells[0].text = label
-            header_cells[0].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
-            for run in header_cells[0].paragraphs[0].runs:
-                run.bold = True
+                parts.append(f"{session.duration_minutes} min")
+            if section["note"]:
+                parts.append(section["note"])
+            row_cells[0].text = parts[0]
+            for extra in parts[1:]:
+                row_cells[0].add_paragraph(extra)
+        else:
+            row_cells[0].text = "Other"
 
-        if section["note"]:
-            note_cells = table.add_row().cells
-            note_cells[0].merge(note_cells[-1])
-            note_cells[0].text = section["note"]
-            note_cells[0].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
-
+        # Cell 1: two paragraphs per role (name: member, then [L]/[R] time note)
         if section["roles"]:
+            first = True
             for assignment in section["roles"]:
-                row_cells = table.add_row().cells
-                row_cells[0].text = assignment.role.name
-                row_cells[0].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.RIGHT
-                if assignment.user:
-                    row_cells[1].text = (
-                        f"{assignment.user.first_name} {assignment.user.last_name}"
-                    )
+                # Role + member paragraph
+                if first:
+                    p = row_cells[1].paragraphs[0]
+                    first = False
                 else:
-                    row_cells[1].text = "(Open)"
-                row_cells[1].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
-                row_cells[2].text = assignment.notes or ""
-                row_cells[2].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.LEFT
-        elif session and not session.takes_roles and not section["note"]:
-            # Break session with no note — show "Break" placeholder
-            break_cells = table.add_row().cells
-            break_cells[0].merge(break_cells[-1])
-            break_cells[0].text = "Break"
-            break_cells[0].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    p = row_cells[1].add_paragraph()
+                member = (
+                    f"{assignment.user.first_name} {assignment.user.last_name}"
+                    if assignment.user
+                    else "(Open)"
+                )
+                p.text = f"{assignment.role.name}: {member}"
+
+                # Detail paragraph: [L]/[R], time in minutes, note
+                detail_parts = ["[L]" if assignment.role.in_person else "[R]"]
+                if assignment.role.time_minutes:
+                    detail_parts.append(f"{assignment.role.time_minutes} min")
+                if assignment.notes:
+                    detail_parts.append(assignment.notes)
+                row_cells[1].add_paragraph(" ".join(detail_parts))
+        elif session and not session.takes_roles:
+            row_cells[1].text = "Break"
 
     buffer = io.BytesIO()
     doc.save(buffer)
