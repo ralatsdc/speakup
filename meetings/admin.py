@@ -56,10 +56,17 @@ class MeetingRoleInline(admin.TabularInline):
     model = MeetingRole
     extra = 0
     autocomplete_fields = ["user"]
-    fields = ("session", "role", "user", "notes", "admin_notes", "sort_order")
+    fields = ("session", "role", "user", "in_person", "time_minutes", "notes", "admin_notes", "sort_order")
     formfield_overrides = {
         models.TextField: {"widget": forms.Textarea(attrs={"rows": 2, "cols": 30})},
+        models.PositiveIntegerField: {"widget": forms.NumberInput(attrs={"style": "width: 2em;"})},
     }
+
+    def formfield_for_foreignkey(self, db_field, request, **kwargs):
+        formfield = super().formfield_for_foreignkey(db_field, request, **kwargs)
+        if db_field.name in ("session", "role"):
+            formfield.widget.attrs["style"] = "width: 10em;"
+        return formfield
 
 
 @admin.register(Meeting)

@@ -185,9 +185,9 @@ def meeting_agenda_download(request, meeting_id):
                 p.text = f"{assignment.role.name}: {member}"
 
                 # Detail paragraph: [L]/[R], time in minutes, note
-                detail_parts = ["[L]" if assignment.role.in_person else "[R]"]
-                if assignment.role.time_minutes:
-                    detail_parts.append(f"{assignment.role.time_minutes} min")
+                detail_parts = ["[L]" if assignment.in_person else "[R]"]
+                if assignment.time_minutes:
+                    detail_parts.append(f"{assignment.time_minutes} min")
                 if assignment.notes:
                     detail_parts.append(assignment.notes)
                 row_cells[1].add_paragraph(" ".join(detail_parts))

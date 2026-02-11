@@ -124,6 +124,8 @@ class MeetingRole(models.Model):
         blank=True,
         related_name="meeting_roles",
     )
+    in_person = models.BooleanField(default=True, help_text="Uncheck for roles done remotely")
+    time_minutes = models.PositiveIntegerField(default=0, help_text="Expected duration in minutes")
     notes = models.TextField(blank=True, help_text="Speech title, project details, or feedback.")
     admin_notes = models.TextField(blank=True, help_text="Private feedback or details for the follow-up email.")
 
@@ -176,12 +178,14 @@ def populate_meeting_from_type(sender, instance, created, **kwargs):
                     note=mts.note,
                     sort_order=mts.order,
                 )
-            for item in instance.meeting_type.items.all():
+            for item in instance.meeting_type.items.select_related("role"):
                 for i in range(item.count):
                     MeetingRole.objects.create(
                         meeting=instance,
                         role=item.role,
                         session=item.session,
+                        in_person=item.role.in_person,
+                        time_minutes=item.role.time_minutes,
                         notes=item.default_note,
                         sort_order=item.order,
                     )
