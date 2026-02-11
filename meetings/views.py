@@ -111,7 +111,6 @@ def _remove_paragraph(paragraph):
 def meeting_agenda_download(request, meeting_id):
     """Public endpoint: download the meeting agenda as a Word document."""
     meeting = get_object_or_404(Meeting, id=meeting_id)
-    roles = meeting.roles.select_related("role", "user").order_by("sort_order", "id")
 
     doc = Document(AGENDA_TEMPLATE)
 
@@ -144,21 +143,50 @@ def meeting_agenda_download(request, meeting_id):
     for p in paragraphs_to_remove:
         _remove_paragraph(p)
 
-    # Populate the roles table (first table in the template)
+    # Populate the roles table grouped by session (first table in the template)
+    sections = _build_agenda_sections(meeting)
     table = doc.tables[0]
-    for assignment in roles:
-        row_cells = table.add_row().cells
-        row_cells[0].text = assignment.role.name
-        row_cells[0].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.RIGHT
-        if assignment.user:
-            row_cells[1].text = (
-                f"{assignment.user.first_name} {assignment.user.last_name}"
-            )
-        else:
-            row_cells[1].text = "(Open)"
-        row_cells[1].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
-        row_cells[2].text = assignment.notes or ""
-        row_cells[2].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.LEFT
+    for section in sections:
+        session = section["session"]
+
+        if session:
+            # Session header row — merged across all columns
+            header_cells = table.add_row().cells
+            header_cells[0].merge(header_cells[-1])
+            label = session.name
+            if session.duration_minutes:
+                label += f" ({session.duration_minutes} min)"
+            header_cells[0].text = label
+            header_cells[0].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+            for run in header_cells[0].paragraphs[0].runs:
+                run.bold = True
+
+        if section["note"]:
+            note_cells = table.add_row().cells
+            note_cells[0].merge(note_cells[-1])
+            note_cells[0].text = section["note"]
+            note_cells[0].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+        if section["roles"]:
+            for assignment in section["roles"]:
+                row_cells = table.add_row().cells
+                row_cells[0].text = assignment.role.name
+                row_cells[0].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.RIGHT
+                if assignment.user:
+                    row_cells[1].text = (
+                        f"{assignment.user.first_name} {assignment.user.last_name}"
+                    )
+                else:
+                    row_cells[1].text = "(Open)"
+                row_cells[1].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+                row_cells[2].text = assignment.notes or ""
+                row_cells[2].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.LEFT
+        elif session and not session.takes_roles and not section["note"]:
+            # Break session with no note — show "Break" placeholder
+            break_cells = table.add_row().cells
+            break_cells[0].merge(break_cells[-1])
+            break_cells[0].text = "Break"
+            break_cells[0].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
 
     buffer = io.BytesIO()
     doc.save(buffer)
