@@ -59,7 +59,7 @@ class MeetingRoleInline(admin.TabularInline):
     fields = ("session", "role", "user", "in_person", "time_minutes", "notes", "admin_notes", "sort_order")
     formfield_overrides = {
         models.TextField: {"widget": forms.Textarea(attrs={"rows": 2, "cols": 30})},
-        models.PositiveIntegerField: {"widget": forms.NumberInput(attrs={"style": "width: 2em;"})},
+        models.PositiveIntegerField: {"widget": forms.NumberInput(attrs={"style": "width: 5em;"})},
     }
 
     def formfield_for_foreignkey(self, db_field, request, **kwargs):
