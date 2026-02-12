@@ -173,7 +173,10 @@ def meeting_agenda_download(request, meeting_id):
             if session.duration_minutes:
                 p2.add_run(f"{session.duration_minutes} min")
             if section["note"]:
-                p2.add_run(section["note"])
+                if session.duration_minutes:
+                    p2.add_run(f" - {section['note']}")
+                else:
+                    p2.add_run(f"{section['note']}")
         else:
             r = p1.add_run("Other")
         r.bold = True
@@ -195,17 +198,17 @@ def meeting_agenda_download(request, meeting_id):
                     if assignment.user
                     else "(Open)"
                 )
-                r = p.add_run(f"{assignment.role.name}:")
+                r = p.add_run(f"{assignment.role.name}: ")
                 r.bold = True
                 p.add_run(f"{member}")
 
                 # Detail paragraph: [L]/[R], time in minutes, note
-                p = c.add_paragraph()
-                p.add_run("[L]" if assignment.in_person else "[R]")
+                # p = c.add_paragraph()
+                p.add_run(" [L]" if assignment.in_person else " [R]")
                 if assignment.time_minutes:
-                    p.add_run(f"{assignment.time_minutes} min")
-                if assignment.notes:
-                    p.add_run(assignment.notes)
+                    p.add_run(f" {assignment.time_minutes} min")
+                if assignment.time_minutes:
+                    p.add_run(f" - {assignment.notes}")
             p.paragraph_format.space_after = Pt(6)
         elif session and not session.takes_roles:
             p = c.paragraphs[0]
