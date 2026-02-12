@@ -254,7 +254,8 @@ def toggle_role(request, role_id):
         assignment.save()
 
     elif assignment.user is None:
-        # Claim: enforce one-role-per-meeting limit (officers/superusers exempt)
+        # Claim: enforce one-role-per-meeting limit
+        # (officers/superusers exempt), and no guest sign ups
         has_existing_role = MeetingRole.objects.filter(
             meeting=assignment.meeting, user=request.user
         ).exists()
@@ -268,6 +269,15 @@ def toggle_role(request, role_id):
                 {
                     "showAlert": "You have already signed up for a role for this meeting. Please drop your current role first."
                 }
+            )
+            return response
+
+        if request.user.is_guest:
+            response = render(
+                request, "meetings/partials/role_row.html", {"assignment": assignment}
+            )
+            response["HX-Trigger"] = json.dumps(
+                {"showAlert": "Guests cannot sign up for a role. Become a member!"}
             )
             return response
 

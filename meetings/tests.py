@@ -95,6 +95,17 @@ class ToggleRoleViewTest(TestCase):
         response = self.client.post(reverse("toggle_role", args=[self.assignment.id]))
         self.assertEqual(response.status_code, 403)
 
+    def test_guest_cannot_claim_role(self):
+        guest = User.objects.create_user(
+            username="guest1", password="testpass", is_guest=True
+        )
+        self.client.login(username="guest1", password="testpass")
+        response = self.client.post(reverse("toggle_role", args=[self.assignment.id]))
+        self.assertEqual(response.status_code, 200)
+        self.assignment.refresh_from_db()
+        self.assertIsNone(self.assignment.user)
+        self.assertIn("Guests cannot sign up", response["HX-Trigger"])
+
     def test_requires_login(self):
         response = self.client.post(reverse("toggle_role", args=[self.assignment.id]))
         self.assertEqual(response.status_code, 302)
