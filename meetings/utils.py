@@ -116,7 +116,7 @@ def send_meeting_feedback(meeting):
             name = attendance.user.first_name
             email = attendance.user.email
         else:
-            name = attendance.guest_name or "Guest"
+            name = attendance.guest_first_name or "Guest"
             email = attendance.guest_email
 
         if not email:

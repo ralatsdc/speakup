@@ -151,7 +151,7 @@ class MeetingRoleAdmin(admin.ModelAdmin):
 class AttendanceAdmin(admin.ModelAdmin):
     list_display = ("meeting", "who_attended", "guest_email", "timestamp")
     list_filter = ("meeting", ("user", admin.EmptyFieldListFilter))
-    search_fields = ("guest_name", "guest_email")
+    search_fields = ("guest_first_name", "guest_last_name", "guest_email")
     actions = ["convert_guest_to_user"]
 
     @admin.action(description="Convert selected guests to Users")
@@ -178,4 +178,4 @@ class AttendanceAdmin(admin.ModelAdmin):
     def who_attended(self, obj):
         if obj.user:
             return f"{obj.user.first_name} {obj.user.last_name} ({'Member' if not obj.user.is_guest else 'Guest User'})"
-        return f"{obj.guest_name} (Walk-in)"
+        return f"{obj.guest_first_name} {obj.guest_last_name} (Walk-in)"

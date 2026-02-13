@@ -370,15 +370,19 @@ def checkin_guest(request, meeting_id):
     """POST endpoint: record a walk-in guest's name and email."""
     if request.method == "POST":
         meeting = get_object_or_404(Meeting, id=meeting_id)
-        name = request.POST.get("guest_name")
+        first_name = request.POST.get("guest_first_name")
+        last_name = request.POST.get("guest_last_name")
         email = request.POST.get("guest_email")
 
-        if name and email:
+        if first_name and last_name and email:
             Attendance.objects.create(
-                meeting=meeting, guest_name=name, guest_email=email
+                meeting=meeting,
+                guest_first_name=first_name,
+                guest_last_name=last_name,
+                guest_email=email,
             )
             return render(
-                request, "meetings/partials/guest_success.html", {"name": name}
+                request, "meetings/partials/guest_success.html", {"name": first_name}
             )
 
     return HttpResponseForbidden()

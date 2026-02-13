@@ -13,9 +13,8 @@ def convert_guest_attendance_to_user(attendance):
         return None, False
 
     email = attendance.guest_email.strip().lower()
-    name_parts = attendance.guest_name.strip().split(" ", 1)
-    first_name = name_parts[0]
-    last_name = name_parts[1] if len(name_parts) > 1 else ""
+    first_name = attendance.guest_first_name.strip()
+    last_name = attendance.guest_last_name.strip()
 
     existing = User.objects.filter(email=email).first()
     if existing:

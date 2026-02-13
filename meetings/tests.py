@@ -147,7 +147,7 @@ class ConvertGuestServiceTest(TestCase):
 
     def test_creates_user_from_guest(self):
         attendance = Attendance.objects.create(
-            meeting=self.meeting, guest_name="Jane Doe", guest_email="jane@example.com"
+            meeting=self.meeting, guest_first_name="Jane", guest_last_name="Doe", guest_email="jane@example.com"
         )
         user, created = convert_guest_attendance_to_user(attendance)
         self.assertTrue(created)
@@ -162,7 +162,7 @@ class ConvertGuestServiceTest(TestCase):
             username="jane", email="jane@example.com", password="pass"
         )
         attendance = Attendance.objects.create(
-            meeting=self.meeting, guest_name="Jane Doe", guest_email="jane@example.com"
+            meeting=self.meeting, guest_first_name="Jane", guest_last_name="Doe", guest_email="jane@example.com"
         )
         user, created = convert_guest_attendance_to_user(attendance)
         self.assertFalse(created)
@@ -176,7 +176,7 @@ class ConvertGuestServiceTest(TestCase):
 
     def test_skips_if_no_email(self):
         attendance = Attendance.objects.create(
-            meeting=self.meeting, guest_name="No Email"
+            meeting=self.meeting, guest_first_name="No", guest_last_name="Email"
         )
         result, created = convert_guest_attendance_to_user(attendance)
         self.assertIsNone(result)
@@ -244,7 +244,7 @@ class EmailUtilsTest(TestCase):
         from .utils import send_meeting_feedback
 
         Attendance.objects.create(
-            meeting=self.meeting, guest_name="Walk-in Jane", guest_email="jane@example.com"
+            meeting=self.meeting, guest_first_name="Jane", guest_last_name="Walk-in", guest_email="jane@example.com"
         )
         feedback_count, guest_count = send_meeting_feedback(self.meeting)
         self.assertEqual(feedback_count, 0)

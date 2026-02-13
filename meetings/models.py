@@ -146,7 +146,8 @@ class Attendance(models.Model):
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True
     )
-    guest_name = models.CharField(max_length=100, blank=True)
+    guest_first_name = models.CharField(max_length=50, blank=True)
+    guest_last_name = models.CharField(max_length=50, blank=True)
     guest_email = models.EmailField(blank=True)
 
     timestamp = models.DateTimeField(auto_now_add=True)
@@ -163,7 +164,7 @@ class Attendance(models.Model):
     def __str__(self):
         if self.user:
             return f"{self.user} @ {self.meeting}"
-        return f"{self.guest_name} (Guest) @ {self.meeting}"
+        return f"{self.guest_first_name} {self.guest_last_name} (Guest) @ {self.meeting}"
 
 
 @receiver(post_save, sender=Meeting)
