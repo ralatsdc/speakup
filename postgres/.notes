@@ -1,0 +1,14 @@
+# Install postgresql
+# https://ports.macports.org/port/postgresql17/
+% sudo port install postgresql17
+% sudo port select --set postgresql postgresql17
+
+# Uninstall postgresql
+% sudo port ininstall postgresql17
+
+# Stop and Disable, if needed
+# https://medium.com/@ayiaware/how-to-stop-postgresql-on-macos-to-avoid-port-conflicts-with-docker-9053b936f634
+% sudo find /Library/LaunchDaemons /Library/LaunchAgents -name "*postgres*"
+% sudo -u postgres /Library/PostgreSQL/17/bin/pg_ctl -D /Library/PostgreSQL/17/data stop -m fast
+% sudo launchctl unload -w /Library/LaunchDaemons/postgresql-17.plist
+% sudo launchctl list | grep postgres
