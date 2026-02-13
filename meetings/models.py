@@ -36,6 +36,7 @@ class MeetingType(models.Model):
     """A reusable template that defines which roles a meeting needs (e.g. "Regular Meeting")."""
 
     name = models.CharField(max_length=100)
+    zoom_link = models.URLField(blank=True)
 
     def __str__(self):
         return self.name
@@ -172,6 +173,9 @@ def populate_meeting_from_type(sender, instance, created, **kwargs):
     """Auto-create MeetingSession and MeetingRole rows from the MeetingType template."""
     if created and instance.meeting_type:
         try:
+            if instance.meeting_type.zoom_link and not instance.zoom_link:
+                instance.zoom_link = instance.meeting_type.zoom_link
+                instance.save(update_fields=["zoom_link"])
             for mts in instance.meeting_type.sessions.select_related("session"):
                 MeetingSession.objects.create(
                     meeting=instance,
