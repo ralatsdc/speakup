@@ -29,6 +29,8 @@ class User(AbstractUser):
         return "Member"
 
     def __str__(self):
-        return (
-            f"{self.first_name}" if self.first_name else self.username
-        )
+        if self.first_name and self.last_name:
+            return f"{self.first_name} {self.last_name}"
+        if self.first_name:
+            return self.first_name
+        return self.username
