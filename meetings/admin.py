@@ -71,8 +71,22 @@ class MeetingRoleInline(admin.TabularInline):
         return formfield
 
 
+class MeetingForm(forms.ModelForm):
+    class Meta:
+        model = Meeting
+        fields = "__all__"
+        widgets = {
+            "date": forms.SplitDateTimeWidget(
+                time_format="%H:%M",
+                attrs={"class": "vDateField"},
+                time_attrs={"class": "vTimeField", "value": "18:45"},
+            ),
+        }
+
+
 @admin.register(Meeting)
 class MeetingAdmin(admin.ModelAdmin):
+    form = MeetingForm
     list_display = ("date", "meeting_type", "theme", "role_count_status")
     inlines = [MeetingSessionInline, MeetingRoleInline]
     change_form_template = "meetings/admin/meeting_change_form.html"
