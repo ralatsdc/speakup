@@ -32,7 +32,9 @@
                     </thead>
                     <tbody>
                         {% for assignment in meeting.roles.all %}
-                        {% include 'meetings/partials/role_row.html' with assignment=assignment %}
+                            {% if assignment.role.name != "President" %}
+                            {% include 'meetings/partials/role_row.html' with assignment=assignment %}
+                            {% endif %}
                         {% endfor %}
                     </tbody>
                 </table>
