@@ -55,21 +55,23 @@
                     </thead>
                     <tbody>
                         {% for assignment in section.roles %}
-                        <tr>
-                            <td class="fw-bold">{{ assignment.role.name }}</td>
-                            <td>
-                                {% if assignment.user %}
-                                    {{ assignment.user.first_name }} {{ assignment.user.last_name }}
-                                {% else %}
-                                    <span class="text-muted fst-italic">(Open)</span>
-                                {% endif %}
-                            </td>
-                            <td>
-                                {% if assignment.notes %}
-                                    <em>{{ assignment.notes }}</em>
-                                {% endif %}
-                            </td>
-                        </tr>
+                            {% if assignment.role.name != "President" %}
+                            <tr>
+                                <td class="fw-bold">{{ assignment.role.name }}</td>
+                                <td>
+                                    {% if assignment.user %}
+                                        {{ assignment.user.first_name }} {{ assignment.user.last_name }}
+                                    {% else %}
+                                        <span class="text-muted fst-italic">(Open)</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if assignment.notes %}
+                                        <em>{{ assignment.notes }}</em>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endif %}
                         {% endfor %}
                     </tbody>
                 </table>
