@@ -325,7 +325,7 @@ def checkin_kiosk(request):
     context = {"meeting": meeting}
 
     if meeting:
-        members = User.objects.filter(is_active=True).order_by("first_name")
+        members = User.objects.filter(is_active=True).exclude(username="admin").order_by("first_name")
         checked_in_ids = set(meeting.attendances.values_list("user_id", flat=True))
 
         kiosk_url = f"{settings.SITE_URL}{reverse('checkin_kiosk')}"
