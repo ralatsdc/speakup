@@ -76,7 +76,7 @@ fi
 # Parse command line arguments
 shift `expr ${OPTIND} - 1`
 if [[ "$#" -ne 0 ]]; then
-    echo "No arguments requires"
+    echo "No arguments required"
     exit 1
 fi
 
