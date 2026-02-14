@@ -14,8 +14,9 @@ class CustomUserAdmin(ImportExportModelAdmin, UserAdmin):
             {
                 "fields": (
                     "is_guest",
-                    "phone_number",
                     "join_date",
+                    "notes",
+                    "phone_number",
                     "is_officer",
                     "mentor",
                 )
