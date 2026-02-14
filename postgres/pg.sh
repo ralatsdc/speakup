@@ -91,6 +91,7 @@ else
     exit 1
 fi
 
+# Dump or restore
 if [[ $dump -eq 1 ]]; then
     pg_dump -h $PGHOST -p $PGPORT -d $PGDATABASE -U $PGUSER -w -F t > dump-$(date "+%Y-%m-%dT%H:%M:%S").tar
 else
