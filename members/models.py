@@ -17,6 +17,8 @@ class User(AbstractUser):
         default=False, help_text="Can manage meeting agendas"
     )
 
+    notes = models.TextField(blank=True)
+
     # Mentorship: each member may have one mentor
     mentor = models.ForeignKey(
         "self", null=True, blank=True, on_delete=models.SET_NULL, related_name="mentees"
