@@ -1,11 +1,22 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
+from django.contrib.auth.forms import UserCreationForm
 from import_export.admin import ImportExportModelAdmin
 from .models import User
 from .resources import UserResource
 
+DEFAULT_PASSWORD = "Speak-Up-2026"
+
+
+class CustomUserCreationForm(UserCreationForm):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.initial["password1"] = DEFAULT_PASSWORD
+        self.initial["password2"] = DEFAULT_PASSWORD
+
 
 class CustomUserAdmin(ImportExportModelAdmin, UserAdmin):
+    add_form = CustomUserCreationForm
     resource_class = UserResource # Link the logic we just wrote
     # Add your custom fields to the 'fieldsets' so you can edit them
     fieldsets = UserAdmin.fieldsets + (
