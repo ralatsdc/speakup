@@ -12,3 +12,6 @@
 % sudo -u postgres /Library/PostgreSQL/17/bin/pg_ctl -D /Library/PostgreSQL/17/data stop -m fast
 % sudo launchctl unload -w /Library/LaunchDaemons/postgresql-17.plist
 % sudo launchctl list | grep postgres
+
+To Load: launchctl load ~/Library/LaunchAgents/com.user.pgdump.plist
+To Unload: launchctl unload ~/Library/LaunchAgents/com.user.pgdump.plist
