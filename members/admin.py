@@ -13,10 +13,21 @@ class CustomUserCreationForm(UserCreationForm):
         super().__init__(*args, **kwargs)
         self.initial["password1"] = DEFAULT_PASSWORD
         self.initial["password2"] = DEFAULT_PASSWORD
+        self.fields["password1"].widget.render_value = True
+        self.fields["password2"].widget.render_value = True
 
 
 class CustomUserAdmin(ImportExportModelAdmin, UserAdmin):
     add_form = CustomUserCreationForm
+    add_fieldsets = (
+        (
+            None,
+            {
+                "classes": ("wide",),
+                "fields": ("username", "password1", "password2"),
+            },
+        ),
+    )
     resource_class = UserResource # Link the logic we just wrote
     # Add your custom fields to the 'fieldsets' so you can edit them
     fieldsets = UserAdmin.fieldsets + (
