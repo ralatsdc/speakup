@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1 class="mb-4">Member Guide</h1>
+
+<p class="lead">Welcome to SpeakUp, the Speak Up Cambridge Toastmasters club management app. This guide covers everything you can do as a club member.</p>
+
+<hr>
+
+<h2>Viewing Upcoming Meetings</h2>
+<p>The <a href="{% url 'upcoming_meetings' %}">home page</a> shows a list of upcoming meetings. Each meeting displays:</p>
+<ul>
+    <li><strong>Date</strong> and <strong>meeting type</strong></li>
+    <li><strong>Theme</strong> and <strong>word of the day</strong> (if set)</li>
+    <li><strong>Zoom link</strong> (if the meeting is hybrid or virtual)</li>
+    <li>A table of <strong>roles</strong> showing who is signed up for each one</li>
+</ul>
+
+<hr>
+
+<h2>Signing Up for a Role</h2>
+<p>To volunteer for a meeting role:</p>
+<ol>
+    <li>Find the meeting on the <a href="{% url 'upcoming_meetings' %}">home page</a>.</li>
+    <li>Look for roles marked as <strong>Open</strong> (no one assigned yet).</li>
+    <li>Click the <strong>"Sign Up"</strong> button next to the role you want.</li>
+</ol>
+<p>Your name will appear in the role assignment immediately &mdash; no page reload needed.</p>
+
+<p><strong>Good to know:</strong></p>
+<ul>
+    <li>You can sign up for <strong>one role per meeting</strong>. (Officers may take additional roles.)</li>
+    <li>To <strong>drop a role</strong> you've already claimed, click the <strong>"Drop"</strong> button next to your assignment.</li>
+    <li>Guest accounts cannot sign up for roles. If you're listed as a guest and want to start taking roles, ask your club admin to update your account.</li>
+</ul>
+
+<hr>
+
+<h2>Adding Notes to Your Role</h2>
+<p>If you're assigned a role &mdash; especially a speech role &mdash; you can add notes that will appear on the public agenda (e.g., your speech title and Pathways project).</p>
+<ol>
+    <li>Click the <strong>pencil icon</strong> next to your role.</li>
+    <li>Type your notes in the text field that appears.</li>
+    <li>Click <strong>Save</strong>.</li>
+</ol>
+<p>Officers can edit notes on any role, not just their own.</p>
+
+<hr>
+
+<h2>Viewing the Meeting Agenda</h2>
+<p>Each meeting has a public agenda page that anyone can view (no login required). The agenda shows:</p>
+<ul>
+    <li>Meeting date, theme, and word of the day</li>
+    <li>All sessions and role assignments</li>
+    <li>Notes added by role holders</li>
+    <li>Zoom link (if applicable)</li>
+</ul>
+<p>You can also <strong>download the agenda as a Word document</strong> using the download button on the agenda page. This is handy for printing or sharing.</p>
+
+<hr>
+
+<h2>Checking In at Meetings</h2>
+<p>At the meeting venue, a <strong>check-in kiosk</strong> is available (usually on a tablet near the entrance). No login is needed.</p>
+<ul>
+    <li><strong>Members</strong>: Find your name in the grid and tap it to check in. Your button turns green to confirm.</li>
+    <li><strong>Guests</strong>: Fill out the guest sign-in form with your name and email.</li>
+</ul>
+
+<hr>
+
+<h2>Emails You May Receive</h2>
+<p>The club admin may send you emails through the app:</p>
+<ul>
+    <li><strong>Meeting reminders</strong> &mdash; Sent before a meeting. If you have a role, you'll get a reminder with your assignment details and a link to the agenda. If you don't have a role, you may receive a request to help fill open spots.</li>
+    <li><strong>Post-meeting feedback</strong> &mdash; After a meeting, you may receive personalized feedback on your role from the meeting evaluators or officers.</li>
+    <li><strong>Announcements</strong> &mdash; General club news and updates sent by the admin.</li>
+</ul>
+
+<hr>
+
+<h2>Password Reset</h2>
+<p>If you need to change your password:</p>
+<ol>
+    <li>Go to the <a href="{% url 'login' %}">login page</a>.</li>
+    <li>Click <a href="{% url 'password_reset' %}"><strong>"Forgot your password?"</strong></a></li>
+    <li>Enter your email address.</li>
+    <li>Check your email for a reset link and follow the instructions to set a new password.</li>
+</ol>
+
+<hr>
+
+<h2>Quick Reference</h2>
+<table class="table table-bordered">
+    <thead class="table-light">
+        <tr><th>What you want to do</th><th>How to do it</th></tr>
+    </thead>
+    <tbody>
+        <tr><td>See upcoming meetings</td><td>Go to the <a href="{% url 'upcoming_meetings' %}">home page</a></td></tr>
+        <tr><td>Sign up for a role</td><td>Click <strong>Sign Up</strong> next to an open role</td></tr>
+        <tr><td>Drop a role</td><td>Click <strong>Drop</strong> next to your assigned role</td></tr>
+        <tr><td>Add speech title / notes</td><td>Click the pencil icon next to your role</td></tr>
+        <tr><td>View the full agenda</td><td>Click the agenda link for any meeting</td></tr>
+        <tr><td>Download the agenda</td><td>Use the download button on the agenda page</td></tr>
+        <tr><td>Check in at a meeting</td><td>Use the kiosk at the venue</td></tr>
+        <tr><td>Reset your password</td><td>Click <a href="{% url 'password_reset' %}">"Forgot your password?"</a> on the login page</td></tr>
+    </tbody>
+</table>
+{% endblock %}

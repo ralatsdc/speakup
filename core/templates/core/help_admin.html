@@ -1,0 +1,176 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1 class="mb-4">Admin Guide</h1>
+
+<p class="lead">This guide covers the administrative features of SpeakUp. Admin access requires a staff account. All admin tasks are performed through the <a href="/admin/">Django admin panel</a>.</p>
+
+<hr>
+
+<h2>Getting Started</h2>
+<p>You'll see an <strong>Admin</strong> link in the navigation bar that takes you to the <a href="/admin/">admin panel</a>.</p>
+
+<hr>
+
+<h2>Managing Members</h2>
+
+<h4>Adding a New Member</h4>
+<ol>
+    <li>Go to <a href="/admin/members/user/add/">Members &gt; Users &gt; Add User</a>.</li>
+    <li>Fill in username, first name, last name, and email.</li>
+    <li>A default password is pre-filled &mdash; the member should reset it on first login.</li>
+    <li>Under <strong>Toastmasters Profile</strong>, set:
+        <ul>
+            <li><strong>Is guest</strong> &mdash; check this for visitors who haven't officially joined the club.</li>
+            <li><strong>Is officer</strong> &mdash; check this for current club officers (grants extra permissions; see below).</li>
+            <li><strong>Join date</strong>, <strong>phone number</strong>, <strong>mentor</strong>, and <strong>notes</strong> as needed.</li>
+        </ul>
+    </li>
+</ol>
+
+<h4>Bulk Import / Export</h4>
+<p>Members can be imported from or exported to CSV files using the <strong>Import</strong> and <strong>Export</strong> buttons on the <a href="/admin/members/user/">Users list page</a>. This is useful for onboarding multiple members at once.</p>
+
+<h4>Member Roles and Permissions</h4>
+<table class="table table-bordered">
+    <thead class="table-light">
+        <tr><th>Flag</th><th>What It Grants</th></tr>
+    </thead>
+    <tbody>
+        <tr><td><strong>Is staff</strong></td><td>Access to the admin panel and all administrative functions</td></tr>
+        <tr><td><strong>Is officer</strong></td><td>Can edit notes on any meeting role; can sign up for multiple roles per meeting</td></tr>
+        <tr><td><strong>Is guest</strong></td><td>Cannot sign up for meeting roles; excluded from some email broadcasts</td></tr>
+        <tr><td><strong>Is active</strong></td><td>Unchecking this disables the account without deleting it</td></tr>
+    </tbody>
+</table>
+
+<hr>
+
+<h2>Setting Up Meeting Templates</h2>
+<p>Before scheduling meetings, configure the building blocks: <strong>Roles</strong>, <strong>Sessions</strong>, and <strong>Meeting Types</strong>.</p>
+
+<h4>Roles</h4>
+<p>Go to <a href="/admin/meetings/role/">Meetings &gt; Roles</a> to create the roles used at meetings (e.g., Toastmaster, Timer, Grammarian, Speaker).</p>
+<p>Each role has:</p>
+<ul>
+    <li><strong>Name</strong> &mdash; displayed on agendas and sign-up sheets.</li>
+    <li><strong>Is speech role</strong> &mdash; marks this as a prepared speech slot.</li>
+    <li><strong>Points</strong> &mdash; point value for participation tracking.</li>
+    <li><strong>Time minutes</strong> &mdash; default time allotted.</li>
+    <li><strong>In person</strong> &mdash; whether this role requires physical presence.</li>
+</ul>
+
+<h4>Sessions</h4>
+<p>Go to <a href="/admin/meetings/session/">Meetings &gt; Sessions</a> to create reusable meeting segments (e.g., Table Topics, Prepared Speeches, Break, Business).</p>
+<p>Each session has:</p>
+<ul>
+    <li><strong>Name</strong> &mdash; displayed on the agenda.</li>
+    <li><strong>Duration minutes</strong> &mdash; how long this segment typically lasts.</li>
+    <li><strong>Takes roles</strong> &mdash; whether roles can be assigned within this session.</li>
+</ul>
+
+<h4>Meeting Types</h4>
+<p>Go to <a href="/admin/meetings/meetingtype/">Meetings &gt; Meeting Types</a> to create reusable meeting templates. A meeting type combines sessions and roles into a standard format.</p>
+<ul>
+    <li>Add <strong>sessions</strong> (in order) to define the meeting structure.</li>
+    <li>Add <strong>items</strong> to specify how many of each role are needed.</li>
+    <li>Set an optional <strong>Zoom link</strong> that will be inherited by meetings of this type.</li>
+</ul>
+
+<hr>
+
+<h2>Scheduling Meetings</h2>
+
+<h4>Creating a Meeting</h4>
+<ol>
+    <li>Go to <a href="/admin/meetings/meeting/add/">Meetings &gt; Meetings &gt; Add Meeting</a>.</li>
+    <li>Select a <strong>meeting type</strong> &mdash; sessions and roles will be auto-populated from the template.</li>
+    <li>Set the <strong>date</strong>.</li>
+    <li>Optionally fill in <strong>theme</strong>, <strong>word of the day</strong>, and <strong>Zoom link</strong> (overrides the meeting type default).</li>
+</ol>
+
+<h4>Managing Roles and Assignments</h4>
+<p>On the meeting's edit page, you'll see inline sections for:</p>
+<ul>
+    <li><strong>Meeting Sessions</strong> &mdash; adjust order or notes for each session.</li>
+    <li><strong>Meeting Roles</strong> &mdash; assign members to roles, adjust time, set sort order, and add notes.</li>
+</ul>
+<p>Each role has two note fields:</p>
+<ul>
+    <li><strong>Notes</strong> &mdash; visible on the public agenda (e.g., speech title and project).</li>
+    <li><strong>Admin notes</strong> &mdash; private; included in post-meeting feedback emails to the assignee.</li>
+</ul>
+
+<hr>
+
+<h2>Meeting Day: The Check-In Kiosk</h2>
+<p>The <a href="{% url 'checkin_kiosk' %}">check-in kiosk</a> provides a public interface that does not require login. It is designed to run on a tablet or laptop at the meeting venue.</p>
+<ul>
+    <li><strong>Members</strong> see a grid of names and tap to check in (toggles green/gray).</li>
+    <li><strong>Guests</strong> fill out a sign-in form with their name and email.</li>
+</ul>
+<p>A QR code is displayed on the kiosk page linking to the public agenda.</p>
+
+<h4>Converting Guests to Members</h4>
+<p>After a meeting, walk-in guests who signed in at the kiosk can be converted to user accounts:</p>
+<ol>
+    <li>Go to <a href="/admin/meetings/attendance/">Meetings &gt; Attendances</a>.</li>
+    <li>Select the guest attendance records.</li>
+    <li>Choose the action <strong>"Convert selected guests to Users"</strong> and click Go.</li>
+</ol>
+<p>This creates a new user account (marked as guest) with a random password. The new user can reset their password via the password reset flow.</p>
+
+<hr>
+
+<h2>Communications</h2>
+
+<h4>Sending Meeting Reminders</h4>
+<p>On any meeting's edit page in the admin, click the <strong>"Send Email Reminders"</strong> button. This sends:</p>
+<ul>
+    <li><strong>To members with assigned roles</strong>: A reminder of their role, the meeting date/time, theme, and a link to the agenda.</li>
+    <li><strong>To members without a role</strong>: A request to help fill open roles, with a link to sign up.</li>
+</ul>
+
+<h4>Sending Post-Meeting Feedback</h4>
+<p>After a meeting, fill in the <strong>Admin notes</strong> field on each role where you want to send feedback. Then click <strong>"Send Feedback Emails"</strong>. This sends:</p>
+<ul>
+    <li><strong>To members with admin notes</strong>: Their personalized feedback.</li>
+    <li><strong>To guests who attended</strong>: A thank-you email inviting them to return.</li>
+</ul>
+
+<h4>Sending Announcements</h4>
+<ol>
+    <li>Go to <a href="/admin/communications/announcement/add/">Communications &gt; Announcements &gt; Add Announcement</a>.</li>
+    <li>Write a <strong>subject</strong> and <strong>body</strong>.</li>
+    <li>Choose an <strong>audience</strong>: all members, officers only, or guests only.</li>
+    <li>Save, then click <strong>"Send Announcement"</strong> on the announcement's edit page (or select announcements from the <a href="/admin/communications/announcement/">list</a> and use the "Send selected announcements via Email" action).</li>
+</ol>
+<p>The <strong>sent at</strong> timestamp is recorded automatically and displayed in the list view.</p>
+
+<hr>
+
+<h2>Public Pages (No Login Required)</h2>
+<p>These pages are accessible to anyone, including non-members:</p>
+<ul>
+    <li><strong>Meeting Agenda</strong> &mdash; displays the full agenda with roles, theme, word of the day, and Zoom link. (Linked from each meeting on the <a href="{% url 'upcoming_meetings' %}">home page</a>.)</li>
+    <li><strong>Agenda Download</strong> &mdash; downloads the agenda as a Word document (.docx).</li>
+    <li><strong><a href="{% url 'checkin_kiosk' %}">Check-In Kiosk</a></strong> &mdash; the meeting check-in interface described above.</li>
+</ul>
+
+<hr>
+
+<h2>Email Configuration</h2>
+<ul>
+    <li>In <strong>development</strong> (DEBUG mode), emails are printed to the console instead of being sent.</li>
+    <li>In <strong>production</strong>, emails are sent via the Brevo API. The <code>BREVO_API_KEY</code> and <code>DEFAULT_FROM_EMAIL</code> environment variables must be configured.</li>
+</ul>
+
+<hr>
+
+<h2>Tips</h2>
+<ul>
+    <li>Use the <strong>search</strong> and <strong>filter</strong> features in admin list views to quickly find members, meetings, and attendance records.</li>
+    <li>The <a href="/admin/meetings/attendance/">Attendance</a> admin supports filtering by meeting and by whether a user was present, making it easy to review attendance for specific meetings.</li>
+    <li>When creating a meeting, the sessions and roles are populated automatically from the meeting type &mdash; you only need to adjust assignments and notes.</li>
+</ul>
+{% endblock %}
