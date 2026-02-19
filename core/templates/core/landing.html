@@ -1,0 +1,58 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-8 mx-auto text-center">
+        <!-- About Us -->
+        <section class="mb-5">
+            <h1 class="mb-4">Speak Up Cambridge</h1>
+            <div class="text-center mb-4">
+                <img src="https://secure.meetupstatic.com/photos/event/9/b/1/6/clean_417219702.webp"
+                     alt="Speak Up Cambridge group photo"
+                     class="img-fluid rounded" style="max-width: 500px;">
+            </div>
+            <h2 class="mb-3">About Us</h2>
+            <p class="lead">
+                Are you paralyzed by the mere thought of standing in front of an audience,
+                speaking up at a meeting, presenting your ideas or pitching your business concept?
+            </p>
+            <p>
+                At Speak Up Cambridge, we help members overcome public speaking anxiety through
+                fast-paced, engaging meetups. We follow the Toastmasters International curriculum
+                while adding our own variations. Meetings feature prepared speeches, impromptu
+                speaking exercises, and a 30-second introduction round.
+            </p>
+            <p>
+                We meet on the 2nd and 4th Wednesday of each month from 6:45&ndash;8:45 PM,
+                with both in-person and online options available. Visitors can attend free as guests.
+            </p>
+            <p>
+                <a href="https://www.meetup.com/speak-up-cambridge/" class="btn btn-primary" target="_blank" rel="noopener">
+                    Join us on Meetup
+                </a>
+            </p>
+        </section>
+
+        <!-- Upcoming Meetings -->
+        <section class="mb-5">
+            <h2 class="mb-4">Upcoming Meetings</h2>
+            {% if meetings %}
+                <ul class="list-group">
+                    {% for meeting in meetings %}
+                    <li class="list-group-item">
+                        <a href="{% url 'meeting_agenda' meeting.id %}">
+                            {{ meeting.date|date:"l, F jS, Y" }} at {{ meeting.date|date:"g:i A" }}
+                        </a>
+                        {% if meeting.theme %}
+                            <span class="badge bg-secondary ms-2">{{ meeting.theme }}</span>
+                        {% endif %}
+                    </li>
+                    {% endfor %}
+                </ul>
+            {% else %}
+                <p class="text-muted">No upcoming meetings scheduled. Check back soon!</p>
+            {% endif %}
+        </section>
+    </div>
+</div>
+{% endblock %}
