@@ -9,6 +9,7 @@ psycopg2-binary==2.9.11
 python-dotenv==1.2.1
 
 # Production deployment
+db-to-sqlite==1.5
 dj-database-url==3.1
 gunicorn==25.0
 packaging==26.0

@@ -4,20 +4,23 @@ usage() {
     cat << EOF
 
 NAME
-    pg - Dump or restore Speak Up Cambridge database
+    pg - Dump, convert, or restore Speak Up Cambridge database
 
 SYNOPSIS
     pg [OPTIONS]
 
 DESCRIPTION
     Dump or restore the Railway PostgreSQL database for Speak Up
-    Cambridge with a datetime stamp. The host, port, database, user,
-    and password must be set in the environment.
+    Cambridge with a datetime stamp, or convert it to SQLite. The
+    host, port, database, user, and password must be set in the
+    environment.
 
 OPTIONS 
-    -d    Dump
+    -d    Dump to an archive
 
-    -r    Restore
+    -c    Convert to SQLite
+
+    -r    Restore from an archive
 
     -h    Help
 
@@ -33,11 +36,15 @@ EOF
 
 # Parse command line options
 dump=0
+convert=0
 restore=""
-while getopts ":dr:hex" opt; do
+while getopts ":dcr:hex" opt; do
     case $opt in
         d)
             dump=1
+            ;;
+        c)
+            convert=1
             ;;
         r)
 	    restore="${OPTARG}"
@@ -65,11 +72,11 @@ while getopts ":dr:hex" opt; do
     esac
 done
 
-if [[ $dump -eq 0 && $restore == "" ]]; then
-    echo "Must select dump or restore"
+if [[ $dump -eq 0 && $convert -eq 0 && $restore == "" ]]; then
+    echo "Must select dump, convert, or restore"
     exit 1
-elif [[ $dump -eq 1 && $restore != "" ]]; then
-    echo "Can only select dump OR restore"
+elif [[ $(( $dump + $convert + $([[ $restore != "" ]] && echo 1 || echo 0) )) -gt 1 ]]; then
+    echo "Can only select dump, convert, or restore"
     exit 1
 fi
 
@@ -91,9 +98,11 @@ else
     exit 1
 fi
 
-# Dump or restore
+# Dump, convert, or restore
 if [[ $dump -eq 1 ]]; then
     pg_dump -h $PGHOST -p $PGPORT -d $PGDATABASE -U $PGUSER -w -F t > dump-$(date "+%Y-%m-%dT%H:%M:%S").tar
+elif [[ $convert -eq 1 ]]; then
+    db-to-sqlite "postgresql://$PGUSER:$PGPASSWORD@$PGHOST:$PGPORT/railway" ../db.sqlite3 --all
 else
     pg_restore -h $PGHOST -p $PGPORT -d $PGDATABASE -U $PGUSER -w -c -F t $restore
 fi
