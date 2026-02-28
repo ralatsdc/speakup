@@ -41,8 +41,14 @@ class UserResource(resources.ModelResource):
         if "email" in row and not row.get("username"):
             row["username"] = row["email"].split("@")[0]
 
-        if "is_guest" not in row:
+        if not row.get("is_guest"):
             row["is_guest"] = "1"
+
+        if not row.get("is_officer"):
+            row["is_officer"] = "0"
+
+        if not row.get("is_staff"):
+            row["is_staff"] = "0"
 
     def before_save_instance(self, instance, row, **kwargs):
         """Assign a random password to newly imported users."""
