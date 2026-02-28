@@ -17,6 +17,42 @@ class CustomUserCreationForm(UserCreationForm):
         self.fields["password2"].widget.render_value = True
 
 
+@admin.action(description="Make Guest")
+def make_guest(modeladmin, request, queryset):
+    count = queryset.update(is_guest=True)
+    modeladmin.message_user(request, f"{count} user(s) marked as guest.")
+
+
+@admin.action(description="Remove Guest")
+def remove_guest(modeladmin, request, queryset):
+    count = queryset.update(is_guest=False)
+    modeladmin.message_user(request, f"{count} user(s) unmarked as guest.")
+
+
+@admin.action(description="Make Officer")
+def make_officer(modeladmin, request, queryset):
+    count = queryset.update(is_officer=True)
+    modeladmin.message_user(request, f"{count} user(s) marked as officer.")
+
+
+@admin.action(description="Remove Officer")
+def remove_officer(modeladmin, request, queryset):
+    count = queryset.update(is_officer=False)
+    modeladmin.message_user(request, f"{count} user(s) unmarked as officer.")
+
+
+@admin.action(description="Make Staff")
+def make_staff(modeladmin, request, queryset):
+    count = queryset.update(is_staff=True)
+    modeladmin.message_user(request, f"{count} user(s) marked as staff.")
+
+
+@admin.action(description="Remove Staff")
+def remove_staff(modeladmin, request, queryset):
+    count = queryset.update(is_staff=False)
+    modeladmin.message_user(request, f"{count} user(s) unmarked as staff.")
+
+
 class CustomUserAdmin(ImportExportModelAdmin, UserAdmin):
     add_form = CustomUserCreationForm
     add_fieldsets = (
@@ -53,14 +89,21 @@ class CustomUserAdmin(ImportExportModelAdmin, UserAdmin):
         "last_name",
         "is_guest",
         "is_officer",
+        "is_staff_display",
         "email",
     )
 
     # Filters on the right sidebar (Find guests quickly!)
-    list_filter = ("is_guest", "is_officer", "is_active")
+    list_filter = ("is_guest", "is_officer", "is_staff", "is_active")
 
     # Search bar capability
     search_fields = ("username", "first_name", "last_name", "email")
+
+    actions = [make_guest, remove_guest, make_officer, remove_officer, make_staff, remove_staff]
+
+    @admin.display(boolean=True, description="is staff")
+    def is_staff_display(self, obj):
+        return obj.is_staff
 
 
 # admin.site.unregister(User) # Unregister the default if needed, though we didn't use the default

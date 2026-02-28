@@ -13,6 +13,12 @@ class UserResource(resources.ModelResource):
     is_guest = fields.Field(
         attribute="is_guest", column_name="is_guest", widget=BooleanWidget()
     )
+    is_officer = fields.Field(
+        attribute="is_officer", column_name="is_officer", widget=BooleanWidget()
+    )
+    is_staff = fields.Field(
+        attribute="is_staff", column_name="is_staff", widget=BooleanWidget()
+    )
 
     class Meta:
         model = User
@@ -24,9 +30,11 @@ class UserResource(resources.ModelResource):
             "email",
             "phone_number",
             "is_guest",
+            "is_officer",
+            "is_staff",
             "join_date",
         )
-        exclude = ("password", "is_superuser", "is_staff", "groups", "user_permissions")
+        exclude = ("password", "is_superuser", "groups", "user_permissions")
 
     def before_import_row(self, row, **kwargs):
         """Auto-generate username from email and default is_guest to True."""
