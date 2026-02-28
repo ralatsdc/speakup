@@ -7,7 +7,7 @@ import qrcode
 import qrcode.constants
 from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.contrib.auth.decorators import login_required
+from django.contrib.auth.decorators import login_required, user_passes_test
 from django.core.paginator import Paginator
 from django.http import HttpResponse, HttpResponseForbidden
 from django.shortcuts import get_object_or_404, render
@@ -229,7 +229,6 @@ def meeting_agenda_download(request, meeting_id):
     return response
 
 
-@login_required
 def upcoming_meetings(request):
     """Homepage: shows upcoming meetings with their role assignments."""
     now = timezone.now()
@@ -314,6 +313,8 @@ def save_role_note(request, role_id):
     )
 
 
+@login_required
+@user_passes_test(lambda u: u.is_officer or u.is_staff)
 def checkin_kiosk(request):
     """Displays the check-in grid for today's meeting (or the next upcoming one)."""
     today = timezone.now().date()
@@ -344,6 +345,8 @@ def checkin_kiosk(request):
     return render(request, "meetings/kiosk.html", context)
 
 
+@login_required
+@user_passes_test(lambda u: u.is_officer or u.is_staff)
 @require_POST
 def checkin_member(request, meeting_id, user_id):
     """HTMX endpoint: toggle attendance for a member (check in / undo)."""
@@ -366,6 +369,8 @@ def checkin_member(request, meeting_id, user_id):
     )
 
 
+@login_required
+@user_passes_test(lambda u: u.is_officer or u.is_staff)
 def checkin_guest(request, meeting_id):
     """POST endpoint: record a walk-in guest's name and email."""
     if request.method == "POST":

@@ -14,16 +14,16 @@
         <div class="container">
             <a class="navbar-brand" href="{% url 'landing' %}">SpeakUp 🎤</a>
             <div class="navbar-nav ms-auto">
+                <a class="nav-link" href="{% url 'upcoming_meetings' %}">Meetings</a>
                 {% if user.is_authenticated %}
                     <span class="nav-link text-white">Hello, {{ user.first_name|default:user.username }}</span>
-                    <a class="nav-link" href="{% url 'upcoming_meetings' %}">Sign up</a>
                     <a class="nav-link" href="{% url 'help' %}">Help</a>
 
                     <!-- Only show this link if they are allowed to go there! -->
                     {% if user.is_staff %}
                         <a class="nav-link" href="/admin/">Admin</a>
                     {% endif %}
-                    
+
                     <!-- Add a logout button -->
                     <form action="{% url 'logout' %}" method="post" class="d-inline">
                         {% csrf_token %}

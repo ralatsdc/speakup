@@ -102,7 +102,11 @@ fi
 if [[ $dump -eq 1 ]]; then
     pg_dump -h $PGHOST -p $PGPORT -d $PGDATABASE -U $PGUSER -w -F t > dump-$(date "+%Y-%m-%dT%H:%M:%S").tar
 elif [[ $convert -eq 1 ]]; then
-    db-to-sqlite "postgresql://$PGUSER:$PGPASSWORD@$PGHOST:$PGPORT/railway" ../db.sqlite3 --all
+    sqlite=db-$(date "+%Y-%m-%dT%H:%M:%S").sqlite3
+    db-to-sqlite "postgresql://$PGUSER:$PGPASSWORD@$PGHOST:$PGPORT/railway" $sqlite --all
+    pushd ..
+    ln -s postgres/$sqlite db.sqlite3
+    popd
 else
     pg_restore -h $PGHOST -p $PGPORT -d $PGDATABASE -U $PGUSER -w -c -F t $restore
 fi
