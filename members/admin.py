@@ -91,12 +91,12 @@ class CustomUserAdmin(ImportExportModelAdmin, UserAdmin):
         "last_name",
         "is_guest",
         "is_officer",
-        "is_staff_display",
+        "is_active",
         "email",
     )
 
     # Filters on the right sidebar (Find guests quickly!)
-    list_filter = ("is_guest", "is_officer", "is_staff", "is_active")
+    list_filter = ("is_guest", "is_officer", "is_active")
 
     # Search bar capability
     search_fields = ("username", "first_name", "last_name", "email")
@@ -105,9 +105,6 @@ class CustomUserAdmin(ImportExportModelAdmin, UserAdmin):
     # actions = [make_guest, remove_guest, make_officer, remove_officer, make_staff, remove_staff]
     actions = [make_guest, remove_guest, make_officer, remove_officer]
 
-    @admin.display(boolean=True, description="is staff")
-    def is_staff_display(self, obj):
-        return obj.is_staff
 
 
 # admin.site.unregister(User) # Unregister the default if needed, though we didn't use the default
