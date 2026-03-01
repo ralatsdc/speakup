@@ -49,6 +49,7 @@ def make_active(modeladmin, request, queryset):
 
 @admin.action(description="Remove Active")
 def remove_active(modeladmin, request, queryset):
+    queryset = queryset.exclude(pk=request.user.pk)
     count = queryset.update(is_active=False)
     modeladmin.message_user(request, f"{count} user(s) unmarked as active.")
 
