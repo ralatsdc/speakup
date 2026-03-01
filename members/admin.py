@@ -41,18 +41,16 @@ def remove_officer(modeladmin, request, queryset):
     modeladmin.message_user(request, f"{count} user(s) unmarked as officer.")
 
 
-# TODO: Restore?
-# @admin.action(description="Make Staff")
-# def make_staff(modeladmin, request, queryset):
-#     count = queryset.update(is_staff=True)
-#     modeladmin.message_user(request, f"{count} user(s) marked as staff.")
+@admin.action(description="Make Active")
+def make_active(modeladmin, request, queryset):
+    count = queryset.update(is_active=True)
+    modeladmin.message_user(request, f"{count} user(s) marked as active.")
 
 
-# TODO: Restore?
-# @admin.action(description="Remove Staff")
-# def remove_staff(modeladmin, request, queryset):
-#     count = queryset.update(is_staff=False)
-#     modeladmin.message_user(request, f"{count} user(s) unmarked as staff.")
+@admin.action(description="Remove Active")
+def remove_active(modeladmin, request, queryset):
+    count = queryset.update(is_active=False)
+    modeladmin.message_user(request, f"{count} user(s) unmarked as active.")
 
 
 class CustomUserAdmin(ImportExportModelAdmin, UserAdmin):
@@ -101,9 +99,7 @@ class CustomUserAdmin(ImportExportModelAdmin, UserAdmin):
     # Search bar capability
     search_fields = ("username", "first_name", "last_name", "email")
 
-    # TODO: Restore?
-    # actions = [make_guest, remove_guest, make_officer, remove_officer, make_staff, remove_staff]
-    actions = [make_guest, remove_guest, make_officer, remove_officer]
+    actions = [make_guest, remove_guest, make_officer, remove_officer, make_active, remove_active]
 
 
 
