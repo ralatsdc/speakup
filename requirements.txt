@@ -7,6 +7,7 @@ python-docx==1.1.2
 qrcode[pil]==8.0
 psycopg2-binary==2.9.11
 python-dotenv==1.2.1
+requests==2.32.3
 
 # Production deployment
 db-to-sqlite==1.5

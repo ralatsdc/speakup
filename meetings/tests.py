@@ -7,6 +7,7 @@ from django.utils import timezone
 from members.models import User
 from .models import Meeting, MeetingType, MeetingTypeItem, MeetingRole, Role, Attendance
 from .services import convert_guest_attendance_to_user
+from .zoom import extract_zoom_meeting_id, import_zoom_registrants
 
 
 class MeetingSignalTest(TestCase):
@@ -51,10 +52,9 @@ class UpcomingMeetingsViewTest(TestCase):
         self.client = Client()
         self.user = User.objects.create_user(username="testuser", password="testpass")
 
-    def test_requires_login(self):
+    def test_anonymous_access(self):
         response = self.client.get(reverse("upcoming_meetings"))
-        self.assertEqual(response.status_code, 302)
-        self.assertIn("/accounts/login/", response.url)
+        self.assertEqual(response.status_code, 200)
 
     def test_authenticated_access(self):
         self.client.login(username="testuser", password="testpass")
@@ -114,7 +114,9 @@ class ToggleRoleViewTest(TestCase):
 class CheckinKioskViewTest(TestCase):
     def setUp(self):
         self.client = Client()
-        self.user = User.objects.create_user(username="testuser", password="testpass")
+        self.user = User.objects.create_user(
+            username="testuser", password="testpass", is_officer=True
+        )
 
     def test_no_meeting_shows_warning(self):
         self.client.login(username="testuser", password="testpass")
@@ -126,7 +128,9 @@ class CheckinKioskViewTest(TestCase):
 class CheckinMemberViewTest(TestCase):
     def setUp(self):
         self.client = Client()
-        self.user = User.objects.create_user(username="testuser", password="testpass")
+        self.user = User.objects.create_user(
+            username="testuser", password="testpass", is_officer=True
+        )
         self.meeting = Meeting.objects.create(date=timezone.now())
 
     def test_checkin_creates_attendance(self):
@@ -249,3 +253,87 @@ class EmailUtilsTest(TestCase):
         feedback_count, guest_count = send_meeting_feedback(self.meeting)
         self.assertEqual(feedback_count, 0)
         self.assertEqual(guest_count, 1)
+
+
+class ZoomUrlParsingTest(TestCase):
+    def test_standard_url(self):
+        self.assertEqual(extract_zoom_meeting_id("https://zoom.us/j/1234567890"), "1234567890")
+
+    def test_url_with_password(self):
+        self.assertEqual(
+            extract_zoom_meeting_id("https://zoom.us/j/1234567890?pwd=abc123"),
+            "1234567890",
+        )
+
+    def test_custom_subdomain(self):
+        self.assertEqual(
+            extract_zoom_meeting_id("https://company.zoom.us/j/9876543210"),
+            "9876543210",
+        )
+
+    def test_no_meeting_id(self):
+        self.assertIsNone(extract_zoom_meeting_id("https://zoom.us/meeting"))
+
+    def test_empty_string(self):
+        self.assertIsNone(extract_zoom_meeting_id(""))
+
+
+class ZoomImportTest(TestCase):
+    def setUp(self):
+        self.meeting = Meeting.objects.create(
+            date=timezone.now(),
+            zoom_link="https://zoom.us/j/1234567890",
+        )
+        self.member = User.objects.create_user(
+            username="alice", password="pass", email="alice@example.com", first_name="Alice"
+        )
+
+    @patch("meetings.zoom.fetch_zoom_registrants")
+    def test_matches_member_by_email(self, mock_fetch):
+        mock_fetch.return_value = [
+            {"email": "alice@example.com", "first_name": "Alice", "last_name": "Smith"},
+        ]
+        members, guests, skipped = import_zoom_registrants(self.meeting)
+        self.assertEqual(members, 1)
+        self.assertEqual(guests, 0)
+        self.assertEqual(skipped, 0)
+        self.assertTrue(Attendance.objects.filter(meeting=self.meeting, user=self.member).exists())
+
+    @patch("meetings.zoom.fetch_zoom_registrants")
+    def test_creates_guest_for_unknown_email(self, mock_fetch):
+        mock_fetch.return_value = [
+            {"email": "stranger@example.com", "first_name": "Bob", "last_name": "Jones"},
+        ]
+        members, guests, skipped = import_zoom_registrants(self.meeting)
+        self.assertEqual(members, 0)
+        self.assertEqual(guests, 1)
+        att = Attendance.objects.get(meeting=self.meeting, guest_email="stranger@example.com")
+        self.assertEqual(att.guest_first_name, "Bob")
+
+    @patch("meetings.zoom.fetch_zoom_registrants")
+    def test_skips_duplicate_member(self, mock_fetch):
+        Attendance.objects.create(meeting=self.meeting, user=self.member)
+        mock_fetch.return_value = [
+            {"email": "alice@example.com", "first_name": "Alice", "last_name": "Smith"},
+        ]
+        members, guests, skipped = import_zoom_registrants(self.meeting)
+        self.assertEqual(members, 0)
+        self.assertEqual(skipped, 1)
+
+    @patch("meetings.zoom.fetch_zoom_registrants")
+    def test_skips_duplicate_guest(self, mock_fetch):
+        Attendance.objects.create(
+            meeting=self.meeting, guest_first_name="Bob", guest_last_name="Jones",
+            guest_email="stranger@example.com",
+        )
+        mock_fetch.return_value = [
+            {"email": "stranger@example.com", "first_name": "Bob", "last_name": "Jones"},
+        ]
+        members, guests, skipped = import_zoom_registrants(self.meeting)
+        self.assertEqual(guests, 0)
+        self.assertEqual(skipped, 1)
+
+    def test_missing_zoom_link(self):
+        meeting_no_link = Meeting.objects.create(date=timezone.now())
+        with self.assertRaises(ValueError):
+            import_zoom_registrants(meeting_no_link)

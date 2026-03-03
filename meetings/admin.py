@@ -97,6 +97,11 @@ class MeetingAdmin(admin.ModelAdmin):
                 self.admin_site.admin_view(self.process_feedback),
                 name="meeting-feedback",
             ),
+            path(
+                "<int:meeting_id>/import-zoom-registrants/",
+                self.admin_site.admin_view(self.process_zoom_import),
+                name="meeting-zoom-import",
+            ),
         ]
         return custom_urls + urls
 
@@ -131,12 +136,52 @@ class MeetingAdmin(admin.ModelAdmin):
 
         return HttpResponseRedirect(f"../../{meeting_id}/change/")
 
+    def process_zoom_import(self, request, meeting_id):
+        from .zoom import import_zoom_registrants
+
+        meeting = self.get_object(request, meeting_id)
+
+        if not meeting.zoom_link:
+            self.message_user(
+                request, "This meeting has no Zoom link set.", messages.ERROR
+            )
+            return HttpResponseRedirect(f"../../{meeting_id}/change/")
+
+        try:
+            members_count, guests_count, skipped_count = import_zoom_registrants(meeting)
+        except Exception as e:
+            self.message_user(request, f"Zoom import failed: {e}", messages.ERROR)
+            return HttpResponseRedirect(f"../../{meeting_id}/change/")
+
+        parts = []
+        if members_count:
+            parts.append(f"{members_count} members")
+        if guests_count:
+            parts.append(f"{guests_count} guests")
+        if skipped_count:
+            parts.append(f"{skipped_count} skipped (duplicates)")
+
+        if parts:
+            self.message_user(
+                request,
+                f"Zoom import complete: {', '.join(parts)}.",
+                messages.SUCCESS,
+            )
+        else:
+            self.message_user(
+                request, "No registrants found to import.", messages.WARNING
+            )
+
+        return HttpResponseRedirect(f"../../{meeting_id}/change/")
+
     def response_change(self, request, obj):
-        """Route the custom 'Send Reminders' and 'Send Feedback' buttons."""
+        """Route custom action buttons."""
         if "_send-reminders" in request.POST:
             return self.process_reminders(request, obj.pk)
         if "_send-feedback" in request.POST:
             return self.process_feedback(request, obj.pk)
+        if "_import-zoom" in request.POST:
+            return self.process_zoom_import(request, obj.pk)
         return super().response_change(request, obj)
 
 
