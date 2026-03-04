@@ -105,7 +105,7 @@ elif [[ $convert -eq 1 ]]; then
     sqlite=db-$(date "+%Y-%m-%dT%H:%M:%S").sqlite3
     db-to-sqlite "postgresql://$PGUSER:$PGPASSWORD@$PGHOST:$PGPORT/railway" $sqlite --all
     pushd ..
-    ln -s postgres/$sqlite db.sqlite3
+    ln -fs postgres/$sqlite db.sqlite3
     popd
 else
     pg_restore -h $PGHOST -p $PGPORT -d $PGDATABASE -U $PGUSER -w -c -F t $restore
