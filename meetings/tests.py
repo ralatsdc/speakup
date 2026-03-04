@@ -280,19 +280,30 @@ class ZoomUrlParsingTest(TestCase):
 
 class ZoomImportTest(TestCase):
     def setUp(self):
+        self.meeting_date = timezone.now()
         self.meeting = Meeting.objects.create(
-            date=timezone.now(),
+            date=self.meeting_date,
             zoom_link="https://zoom.us/j/1234567890",
         )
         self.member = User.objects.create_user(
             username="alice", password="pass", email="alice@example.com", first_name="Alice"
         )
+        # A create_time within the registration window (1 day before meeting)
+        self.valid_time = (self.meeting_date - timezone.timedelta(days=1)).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        )
+
+    def _reg(self, email, first_name="Test", last_name="User", create_time=None):
+        return {
+            "email": email,
+            "first_name": first_name,
+            "last_name": last_name,
+            "create_time": create_time or self.valid_time,
+        }
 
     @patch("meetings.zoom.fetch_zoom_registrants")
     def test_matches_member_by_email(self, mock_fetch):
-        mock_fetch.return_value = [
-            {"email": "alice@example.com", "first_name": "Alice", "last_name": "Smith"},
-        ]
+        mock_fetch.return_value = [self._reg("alice@example.com", "Alice", "Smith")]
         members, guests, skipped = import_zoom_registrants(self.meeting)
         self.assertEqual(members, 1)
         self.assertEqual(guests, 0)
@@ -301,9 +312,7 @@ class ZoomImportTest(TestCase):
 
     @patch("meetings.zoom.fetch_zoom_registrants")
     def test_creates_guest_for_unknown_email(self, mock_fetch):
-        mock_fetch.return_value = [
-            {"email": "stranger@example.com", "first_name": "Bob", "last_name": "Jones"},
-        ]
+        mock_fetch.return_value = [self._reg("stranger@example.com", "Bob", "Jones")]
         members, guests, skipped = import_zoom_registrants(self.meeting)
         self.assertEqual(members, 0)
         self.assertEqual(guests, 1)
@@ -313,9 +322,7 @@ class ZoomImportTest(TestCase):
     @patch("meetings.zoom.fetch_zoom_registrants")
     def test_skips_duplicate_member(self, mock_fetch):
         Attendance.objects.create(meeting=self.meeting, user=self.member)
-        mock_fetch.return_value = [
-            {"email": "alice@example.com", "first_name": "Alice", "last_name": "Smith"},
-        ]
+        mock_fetch.return_value = [self._reg("alice@example.com", "Alice", "Smith")]
         members, guests, skipped = import_zoom_registrants(self.meeting)
         self.assertEqual(members, 0)
         self.assertEqual(skipped, 1)
@@ -326,12 +333,42 @@ class ZoomImportTest(TestCase):
             meeting=self.meeting, guest_first_name="Bob", guest_last_name="Jones",
             guest_email="stranger@example.com",
         )
-        mock_fetch.return_value = [
-            {"email": "stranger@example.com", "first_name": "Bob", "last_name": "Jones"},
-        ]
+        mock_fetch.return_value = [self._reg("stranger@example.com", "Bob", "Jones")]
         members, guests, skipped = import_zoom_registrants(self.meeting)
         self.assertEqual(guests, 0)
         self.assertEqual(skipped, 1)
+
+    @patch("meetings.zoom.fetch_zoom_registrants")
+    def test_filters_out_old_registrants(self, mock_fetch):
+        """Registrants from a previous meeting's window should be excluded."""
+        # Create a previous meeting 14 days ago
+        prev_date = self.meeting_date - timezone.timedelta(days=14)
+        Meeting.objects.create(date=prev_date, zoom_link="https://zoom.us/j/1234567890")
+
+        old_time = (prev_date - timezone.timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        mock_fetch.return_value = [
+            self._reg("alice@example.com", "Alice", "Smith", create_time=old_time),
+            self._reg("stranger@example.com", "Bob", "Jones", create_time=self.valid_time),
+        ]
+        members, guests, skipped = import_zoom_registrants(self.meeting)
+        # Alice's old registration is filtered out; only Bob (unknown email) imported as guest
+        self.assertEqual(members, 0)
+        self.assertEqual(guests, 1)
+        self.assertFalse(Attendance.objects.filter(meeting=self.meeting, user=self.member).exists())
+
+    @patch("meetings.zoom.fetch_zoom_registrants")
+    def test_includes_registrants_within_window(self, mock_fetch):
+        """Registrants created after the previous meeting should be included."""
+        prev_date = self.meeting_date - timezone.timedelta(days=7)
+        Meeting.objects.create(date=prev_date, zoom_link="https://zoom.us/j/1234567890")
+
+        # Registered 3 days before this meeting (after prev meeting)
+        recent_time = (self.meeting_date - timezone.timedelta(days=3)).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        )
+        mock_fetch.return_value = [self._reg("alice@example.com", "Alice", "Smith", create_time=recent_time)]
+        members, guests, skipped = import_zoom_registrants(self.meeting)
+        self.assertEqual(members, 1)
 
     def test_missing_zoom_link(self):
         meeting_no_link = Meeting.objects.create(date=timezone.now())

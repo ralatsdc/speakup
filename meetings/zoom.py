@@ -1,11 +1,13 @@
 import re
 import time
+from datetime import timedelta
 
 import requests
 from django.conf import settings
+from django.utils import timezone as tz
 
 from members.models import User
-from .models import Attendance
+from .models import Attendance, Meeting
 
 # Module-level token cache
 _token_cache = {"token": None, "expires_at": 0}
@@ -68,8 +70,39 @@ def fetch_zoom_registrants(meeting_id):
     return registrants
 
 
+def _registration_window(meeting):
+    """Return (start, end) datetimes for filtering registrants by create_time.
+
+    Uses the previous meeting's date as the lower bound (so registrations after
+    that meeting count toward this one). Falls back to 30 days before if there
+    is no previous meeting. The upper bound is the meeting date + 1 day.
+    """
+    previous = (
+        Meeting.objects.filter(date__lt=meeting.date)
+        .order_by("-date")
+        .values_list("date", flat=True)
+        .first()
+    )
+    start = previous if previous else meeting.date - timedelta(days=30)
+    end = meeting.date + timedelta(days=1)
+    return start, end
+
+
+def _parse_zoom_datetime(dt_string):
+    """Parse a Zoom API datetime string (ISO 8601) into an aware datetime."""
+    from django.utils.dateparse import parse_datetime
+
+    dt = parse_datetime(dt_string)
+    if dt and tz.is_naive(dt):
+        dt = tz.make_aware(dt, tz.utc)
+    return dt
+
+
 def import_zoom_registrants(meeting):
     """Import Zoom registrants as Attendance records for a meeting.
+
+    Only includes registrants whose create_time falls between the previous
+    meeting date and the day after this meeting.
 
     Returns (members_count, guests_count, skipped_count).
     """
@@ -78,6 +111,18 @@ def import_zoom_registrants(meeting):
         raise ValueError("Could not extract Zoom meeting ID from the zoom_link.")
 
     registrants = fetch_zoom_registrants(meeting_id)
+
+    # Filter registrants to those who registered in the window for this meeting
+    window_start, window_end = _registration_window(meeting)
+    filtered = []
+    for reg in registrants:
+        create_time = reg.get("create_time")
+        if not create_time:
+            continue
+        dt = _parse_zoom_datetime(create_time)
+        if dt and window_start <= dt <= window_end:
+            filtered.append(reg)
+    registrants = filtered
 
     # Build a lookup of existing member emails
     users_by_email = {u.email.lower(): u for u in User.objects.filter(is_active=True) if u.email}
