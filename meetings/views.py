@@ -313,8 +313,6 @@ def save_role_note(request, role_id):
     )
 
 
-@login_required
-@user_passes_test(lambda u: u.is_officer or u.is_staff)
 def checkin_kiosk(request):
     """Displays the check-in grid for today's meeting (or the next upcoming one)."""
     today = timezone.now().date()
@@ -345,8 +343,6 @@ def checkin_kiosk(request):
     return render(request, "meetings/kiosk.html", context)
 
 
-@login_required
-@user_passes_test(lambda u: u.is_officer or u.is_staff)
 @require_POST
 def checkin_member(request, meeting_id, user_id):
     """HTMX endpoint: toggle attendance for a member (check in / undo)."""
@@ -369,8 +365,6 @@ def checkin_member(request, meeting_id, user_id):
     )
 
 
-@login_required
-@user_passes_test(lambda u: u.is_officer or u.is_staff)
 def checkin_guest(request, meeting_id):
     """POST endpoint: record a walk-in guest's name and email."""
     if request.method == "POST":
