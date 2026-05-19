@@ -14,6 +14,7 @@
                     {% if assignment.user == user %}
                         <span class="text-success fw-bold me-2">You</span>
                         {% if user.is_guest %}<span class="badge rounded-pill bg-info text-dark me-2">Guest</span>{% endif %}
+                        {% if assignment.in_person is not None %}<span class="badge rounded-pill {% if assignment.in_person %}bg-success{% else %}bg-secondary{% endif %} me-2">{% if assignment.in_person %}In Person{% else %}Remote{% endif %}</span>{% endif %}
                         <button class="btn btn-sm btn-outline-danger"
                                 hx-post="{% url 'toggle_role' assignment.id %}"
                                 hx-target="#role-row-{{ assignment.id }}"
@@ -21,6 +22,7 @@
                     {% else %}
                         {{ assignment.user.first_name }} {{ assignment.user.last_name }}
                         {% if assignment.user.is_guest %}<span class="badge rounded-pill bg-info text-dark ms-1">Guest</span>{% endif %}
+                        {% if assignment.in_person is not None %}<span class="badge rounded-pill {% if assignment.in_person %}bg-success{% else %}bg-secondary{% endif %} ms-1">{% if assignment.in_person %}In Person{% else %}Remote{% endif %}</span>{% endif %}
                     {% endif %}
                 {% else %}
                     {% if user.is_authenticated %}

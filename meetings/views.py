@@ -204,7 +204,10 @@ def meeting_agenda_download(request, meeting_id):
 
                 # Detail paragraph: [L]/[R], time in minutes, note
                 # p = c.add_paragraph()
-                p.add_run(" [L]" if assignment.in_person else " [R]")
+                if assignment.in_person is True:
+                    p.add_run(" [L]")
+                elif assignment.in_person is False:
+                    p.add_run(" [R]")
                 if assignment.time_minutes:
                     p.add_run(f" {assignment.time_minutes} min")
                 if assignment.time_minutes:
@@ -253,6 +256,7 @@ def toggle_role(request, role_id):
     if assignment.user == request.user:
         # Drop: user is un-signing from their own role
         assignment.user = None
+        assignment.in_person = None
         assignment.save()
 
     elif assignment.user is None:
@@ -284,6 +288,9 @@ def toggle_role(request, role_id):
             return response
 
         assignment.user = request.user
+        # Default to the role's expected mode until the member chooses
+        # explicitly (handled by the future sign-up dialog).
+        assignment.in_person = assignment.role.in_person
         assignment.save()
 
     else:
@@ -324,8 +331,23 @@ def checkin_kiosk(request):
     context = {"meeting": meeting}
 
     if meeting:
-        members = User.objects.filter(is_active=True).exclude(username="admin").order_by("first_name")
+        members = list(
+            User.objects.filter(is_active=True)
+            .exclude(username="admin")
+            .order_by("first_name")
+        )
         checked_in_ids = set(meeting.attendances.values_list("user_id", flat=True))
+
+        # Map each member to their role's attendance mode for this meeting.
+        # If a member holds multiple roles, the first non-null mode wins.
+        mode_by_user = {}
+        for uid, in_person in meeting.roles.filter(
+            user__isnull=False
+        ).values_list("user_id", "in_person"):
+            if mode_by_user.get(uid) is None:
+                mode_by_user[uid] = in_person
+        for member in members:
+            member.attendance_mode = mode_by_user.get(member.id)
 
         kiosk_url = f"{settings.SITE_URL}{reverse('checkin_kiosk')}"
         qr_data_uri = _generate_qr_data_uri(kiosk_url)
@@ -357,6 +379,13 @@ def checkin_member(request, meeting_id, user_id):
     else:
         Attendance.objects.create(meeting=meeting, user=user)
         is_present = True
+
+    role = (
+        meeting.roles.filter(user=user, in_person__isnull=False)
+        .order_by("sort_order")
+        .first()
+    )
+    user.attendance_mode = role.in_person if role else None
 
     return render(
         request,

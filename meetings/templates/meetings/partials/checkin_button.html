@@ -7,5 +7,8 @@
     >
         <span class="fw-bold">{{ member.first_name }} {{ member.last_name }}</span>
         {% if is_present %} ✓{% endif %}
+        {% if member.attendance_mode is not None %}
+            <span class="badge rounded-pill {% if member.attendance_mode %}bg-success{% else %}bg-secondary{% endif %} ms-1">{% if member.attendance_mode %}In Person{% else %}Remote{% endif %}</span>
+        {% endif %}
     </button>
 </div>
