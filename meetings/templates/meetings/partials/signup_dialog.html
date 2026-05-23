@@ -1,0 +1,69 @@
+<!-- meetings/templates/meetings/partials/signup_dialog.html -->
+<!-- Loaded by HTMX into #signupModalContent (the .modal-content div). -->
+<form hx-post="{% url 'toggle_role' assignment.id %}"
+      hx-target="#role-row-{{ assignment.id }}"
+      hx-swap="outerHTML">
+    <div class="modal-header">
+        <h5 class="modal-title">Sign Up: {{ assignment.role.name }}</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+    </div>
+    <div class="modal-body">
+        <!-- Attendance mode (required; defaults to the role's expected mode) -->
+        <div class="mb-3">
+            <label class="form-label fw-bold d-block">Attendance</label>
+            <div class="form-check form-check-inline">
+                <input class="form-check-input" type="radio" name="in_person"
+                       id="in-person-{{ assignment.id }}" value="true"
+                       {% if default_in_person %}checked{% endif %}>
+                <label class="form-check-label" for="in-person-{{ assignment.id }}">In Person</label>
+            </div>
+            <div class="form-check form-check-inline">
+                <input class="form-check-input" type="radio" name="in_person"
+                       id="remote-{{ assignment.id }}" value="false"
+                       {% if not default_in_person %}checked{% endif %}>
+                <label class="form-check-label" for="remote-{{ assignment.id }}">Remote</label>
+            </div>
+        </div>
+
+        <!-- Notes / speech title -->
+        <div class="mb-3">
+            <label for="notes-{{ assignment.id }}" class="form-label fw-bold">Speech Title / Notes</label>
+            <textarea class="form-control" id="notes-{{ assignment.id }}" name="notes"
+                      rows="2" placeholder="Optional">{{ assignment.notes }}</textarea>
+        </div>
+
+        {% if assignment.role.is_speech_role %}
+        <!-- Pathways details (speech roles only) -->
+        <div class="mb-3">
+            <label for="pathways-path-{{ assignment.id }}" class="form-label fw-bold">Pathways Path</label>
+            <select class="form-select" id="pathways-path-{{ assignment.id }}" name="pathways_path">
+                <option value="">-- Select path --</option>
+                {% for value, label in pathways_paths %}
+                <option value="{{ value }}">{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="row">
+            <div class="col-4 mb-3">
+                <label for="pathways-level-{{ assignment.id }}" class="form-label fw-bold">Level</label>
+                <select class="form-select" id="pathways-level-{{ assignment.id }}" name="pathways_level">
+                    <option value="">--</option>
+                    {% for value, label in pathways_levels %}
+                    <option value="{{ value }}">{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-8 mb-3">
+                <label for="pathways-project-{{ assignment.id }}" class="form-label fw-bold">Project</label>
+                <input type="text" class="form-control" id="pathways-project-{{ assignment.id }}"
+                       name="pathways_project" value="{{ assignment.pathways_project }}"
+                       placeholder="Optional">
+            </div>
+        </div>
+        {% endif %}
+    </div>
+    <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="submit" class="btn btn-primary">Sign Up</button>
+    </div>
+</form>

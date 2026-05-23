@@ -40,10 +40,37 @@
         <!-- Child templates inject content here -->
         {% endblock %}
     </div>
+
+    <!-- Shared modal: HTMX loads partials (e.g. the role sign-up dialog) here -->
+    <div class="modal fade" id="signupModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content" id="signupModalContent">
+                <!-- Form partial injected by HTMX -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap 5 JS bundle (modals, dismiss behavior) -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         document.body.addEventListener("showAlert", function(evt) {
             alert(evt.detail.value);
         });
+
+        // Close the shared sign-up modal when the server asks (HX-Trigger).
+        document.body.addEventListener("closeModal", function() {
+            var modalEl = document.getElementById("signupModal");
+            var modal = bootstrap.Modal.getInstance(modalEl);
+            if (modal) { modal.hide(); }
+        });
+
+        // Drop stale form content once the modal is fully hidden, so the
+        // next role's dialog never flashes the previous one.
+        document.getElementById("signupModal").addEventListener(
+            "hidden.bs.modal", function() {
+                document.getElementById("signupModalContent").innerHTML = "";
+            }
+        );
 
         document.addEventListener("click", function(evt) {
             var btn = evt.target.closest(".note-toggle-btn");
