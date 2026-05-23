@@ -8,6 +8,11 @@ class User(AbstractUser):
     Differentiates between Guests and official Members.
     """
 
+    # Override AbstractUser.email to enforce uniqueness. Emails are also
+    # lowercased on save() so the unique constraint catches case-difference
+    # duplicates (Alice@x.com vs alice@x.com would collide post-normalization).
+    email = models.EmailField(unique=True)
+
     is_guest = models.BooleanField(default=False)
     phone_number = models.CharField(max_length=20, blank=True)
 
@@ -36,3 +41,10 @@ class User(AbstractUser):
         if self.first_name:
             return self.first_name
         return self.username
+
+    def save(self, *args, **kwargs):
+        # Normalize emails to lowercase so the unique constraint behaves
+        # case-insensitively in practice.
+        if self.email:
+            self.email = self.email.lower()
+        super().save(*args, **kwargs)

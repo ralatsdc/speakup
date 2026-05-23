@@ -38,6 +38,11 @@ class UserResource(resources.ModelResource):
 
     def before_import_row(self, row, **kwargs):
         """Auto-generate username from email and default is_guest to True."""
+        # Normalize email to lowercase so the unique constraint behaves
+        # case-insensitively (matches User.save()).
+        if row.get("email"):
+            row["email"] = row["email"].strip().lower()
+
         if "email" in row and not row.get("username"):
             row["username"] = row["email"].split("@")[0]
 

@@ -59,14 +59,14 @@ class MeetingSignalTest(TestCase):
 class UpcomingMeetingsViewTest(TestCase):
     def setUp(self):
         self.client = Client()
-        self.user = User.objects.create_user(username="testuser", password="testpass")
+        self.user = User.objects.create_user(username="testuser", email="testuser@example.com", password="testpass")
 
     def test_anonymous_access(self):
         response = self.client.get(reverse("upcoming_meetings"))
         self.assertEqual(response.status_code, 200)
 
     def test_authenticated_access(self):
-        self.client.login(username="testuser", password="testpass")
+        self.client.login(username="testuser", email="testuser@example.com", password="testpass")
         response = self.client.get(reverse("upcoming_meetings"))
         self.assertEqual(response.status_code, 200)
 
@@ -74,8 +74,8 @@ class UpcomingMeetingsViewTest(TestCase):
 class ToggleRoleViewTest(TestCase):
     def setUp(self):
         self.client = Client()
-        self.user = User.objects.create_user(username="member1", password="testpass")
-        self.user2 = User.objects.create_user(username="member2", password="testpass")
+        self.user = User.objects.create_user(username="member1", email="member1@example.com", password="testpass")
+        self.user2 = User.objects.create_user(username="member2", email="member2@example.com", password="testpass")
         role = Role.objects.create(name="Timer")
         self.meeting = Meeting.objects.create(date=timezone.now())
         self.assignment = MeetingRole.objects.create(
@@ -83,7 +83,7 @@ class ToggleRoleViewTest(TestCase):
         )
 
     def test_claim_role(self):
-        self.client.login(username="member1", password="testpass")
+        self.client.login(username="member1", email="member1@example.com", password="testpass")
         response = self.client.post(reverse("toggle_role", args=[self.assignment.id]))
         self.assertEqual(response.status_code, 200)
         self.assignment.refresh_from_db()
@@ -92,7 +92,7 @@ class ToggleRoleViewTest(TestCase):
     def test_drop_role(self):
         self.assignment.user = self.user
         self.assignment.save()
-        self.client.login(username="member1", password="testpass")
+        self.client.login(username="member1", email="member1@example.com", password="testpass")
         self.client.post(reverse("toggle_role", args=[self.assignment.id]))
         self.assignment.refresh_from_db()
         self.assertIsNone(self.assignment.user)
@@ -105,7 +105,7 @@ class ToggleRoleViewTest(TestCase):
         )
         self.meeting.meeting_type = meeting_type
         self.meeting.save()
-        self.client.login(username="member1", password="testpass")
+        self.client.login(username="member1", email="member1@example.com", password="testpass")
         self.client.post(reverse("toggle_role", args=[self.assignment.id]))
         self.assignment.refresh_from_db()
         self.assertFalse(self.assignment.in_person)
@@ -114,7 +114,7 @@ class ToggleRoleViewTest(TestCase):
         self.assignment.user = self.user
         self.assignment.in_person = True
         self.assignment.save()
-        self.client.login(username="member1", password="testpass")
+        self.client.login(username="member1", email="member1@example.com", password="testpass")
         self.client.post(reverse("toggle_role", args=[self.assignment.id]))
         self.assignment.refresh_from_db()
         self.assertIsNone(self.assignment.in_person)
@@ -122,15 +122,15 @@ class ToggleRoleViewTest(TestCase):
     def test_cannot_take_occupied_role(self):
         self.assignment.user = self.user2
         self.assignment.save()
-        self.client.login(username="member1", password="testpass")
+        self.client.login(username="member1", email="member1@example.com", password="testpass")
         response = self.client.post(reverse("toggle_role", args=[self.assignment.id]))
         self.assertEqual(response.status_code, 403)
 
     def test_guest_cannot_claim_role(self):
         guest = User.objects.create_user(
-            username="guest1", password="testpass", is_guest=True
+            username="guest1", email="guest1@example.com", password="testpass", is_guest=True
         )
-        self.client.login(username="guest1", password="testpass")
+        self.client.login(username="guest1", email="guest1@example.com", password="testpass")
         response = self.client.post(reverse("toggle_role", args=[self.assignment.id]))
         self.assertEqual(response.status_code, 200)
         self.assignment.refresh_from_db()
@@ -151,7 +151,7 @@ class ToggleRoleViewTest(TestCase):
         )
 
     def test_signup_form_renders(self):
-        self.client.login(username="member1", password="testpass")
+        self.client.login(username="member1", email="member1@example.com", password="testpass")
         response = self.client.get(
             reverse("signup_role_form", args=[self.assignment.id])
         )
@@ -166,7 +166,7 @@ class ToggleRoleViewTest(TestCase):
         self.assertEqual(response.status_code, 302)
 
     def test_signup_form_hides_pathways_for_non_speech_role(self):
-        self.client.login(username="member1", password="testpass")
+        self.client.login(username="member1", email="member1@example.com", password="testpass")
         response = self.client.get(
             reverse("signup_role_form", args=[self.assignment.id])
         )
@@ -174,14 +174,14 @@ class ToggleRoleViewTest(TestCase):
 
     def test_signup_form_shows_pathways_for_speech_role(self):
         speech = self._speech_assignment()
-        self.client.login(username="member1", password="testpass")
+        self.client.login(username="member1", email="member1@example.com", password="testpass")
         response = self.client.get(reverse("signup_role_form", args=[speech.id]))
         self.assertContains(response, "Pathways Path")
         self.assertContains(response, "Presentation Mastery")
 
     def test_claim_with_explicit_remote(self):
         # The Timer role expects in-person; the member overrides to Remote.
-        self.client.login(username="member1", password="testpass")
+        self.client.login(username="member1", email="member1@example.com", password="testpass")
         self.client.post(
             reverse("toggle_role", args=[self.assignment.id]),
             {"in_person": "false"},
@@ -197,7 +197,7 @@ class ToggleRoleViewTest(TestCase):
         )
         self.meeting.meeting_type = meeting_type
         self.meeting.save()
-        self.client.login(username="member1", password="testpass")
+        self.client.login(username="member1", email="member1@example.com", password="testpass")
         self.client.post(
             reverse("toggle_role", args=[self.assignment.id]),
             {"in_person": "true"},
@@ -206,7 +206,7 @@ class ToggleRoleViewTest(TestCase):
         self.assertTrue(self.assignment.in_person)
 
     def test_claim_saves_notes(self):
-        self.client.login(username="member1", password="testpass")
+        self.client.login(username="member1", email="member1@example.com", password="testpass")
         self.client.post(
             reverse("toggle_role", args=[self.assignment.id]),
             {"in_person": "true", "notes": "  Timing the speeches  "},
@@ -216,7 +216,7 @@ class ToggleRoleViewTest(TestCase):
 
     def test_claim_saves_pathways_for_speech_role(self):
         speech = self._speech_assignment()
-        self.client.login(username="member1", password="testpass")
+        self.client.login(username="member1", email="member1@example.com", password="testpass")
         self.client.post(
             reverse("toggle_role", args=[speech.id]),
             {
@@ -233,7 +233,7 @@ class ToggleRoleViewTest(TestCase):
         self.assertEqual(speech.pathways_project, "Effective Body Language")
 
     def test_claim_ignores_pathways_for_non_speech_role(self):
-        self.client.login(username="member1", password="testpass")
+        self.client.login(username="member1", email="member1@example.com", password="testpass")
         self.client.post(
             reverse("toggle_role", args=[self.assignment.id]),
             {
@@ -255,7 +255,7 @@ class ToggleRoleViewTest(TestCase):
             pathways_level=1,
             pathways_project="Hook Your Audience",
         )
-        self.client.login(username="member1", password="testpass")
+        self.client.login(username="member1", email="member1@example.com", password="testpass")
         self.client.post(reverse("toggle_role", args=[speech.id]))
         speech.refresh_from_db()
         self.assertIsNone(speech.user)
@@ -269,11 +269,11 @@ class CheckinKioskViewTest(TestCase):
     def setUp(self):
         self.client = Client()
         self.user = User.objects.create_user(
-            username="testuser", password="testpass", is_officer=True
+            username="testuser", email="testuser@example.com", password="testpass", is_officer=True
         )
 
     def test_no_meeting_shows_warning(self):
-        self.client.login(username="testuser", password="testpass")
+        self.client.login(username="testuser", email="testuser@example.com", password="testpass")
         response = self.client.get(reverse("checkin_kiosk"))
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "No meeting found")
@@ -283,17 +283,17 @@ class CheckinMemberViewTest(TestCase):
     def setUp(self):
         self.client = Client()
         self.user = User.objects.create_user(
-            username="testuser", password="testpass", is_officer=True
+            username="testuser", email="testuser@example.com", password="testpass", is_officer=True
         )
         self.meeting = Meeting.objects.create(date=timezone.now())
 
     def test_checkin_creates_attendance(self):
-        self.client.login(username="testuser", password="testpass")
+        self.client.login(username="testuser", email="testuser@example.com", password="testpass")
         self.client.post(reverse("checkin_member", args=[self.meeting.id, self.user.id]))
         self.assertTrue(Attendance.objects.filter(meeting=self.meeting, user=self.user).exists())
 
     def test_checkin_toggle_removes_attendance(self):
-        self.client.login(username="testuser", password="testpass")
+        self.client.login(username="testuser", email="testuser@example.com", password="testpass")
         Attendance.objects.create(meeting=self.meeting, user=self.user)
         self.client.post(reverse("checkin_member", args=[self.meeting.id, self.user.id]))
         self.assertFalse(Attendance.objects.filter(meeting=self.meeting, user=self.user).exists())
@@ -327,7 +327,7 @@ class ConvertGuestServiceTest(TestCase):
         self.assertEqual(user, existing)
 
     def test_skips_if_already_linked(self):
-        linked_user = User.objects.create_user(username="linked", password="pass")
+        linked_user = User.objects.create_user(username="linked", email="linked@example.com", password="pass")
         attendance = Attendance.objects.create(meeting=self.meeting, user=linked_user)
         result, created = convert_guest_attendance_to_user(attendance)
         self.assertIsNone(result)
@@ -556,10 +556,10 @@ class ZoomRegistrationFlagTest(TestCase):
     def setUp(self):
         self.client = Client()
         self.admin_user = User.objects.create_user(
-            username="admin", password="testpass",
+            username="admin", email="admin@example.com", password="testpass",
             is_staff=True, is_superuser=True,
         )
-        self.client.login(username="admin", password="testpass")
+        self.client.login(username="admin", email="admin@example.com", password="testpass")
         self.meeting = Meeting.objects.create(
             date=timezone.now(),
             zoom_link="https://us02web.zoom.us/j/1234567890",
