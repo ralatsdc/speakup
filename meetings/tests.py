@@ -33,6 +33,15 @@ class MeetingSignalTest(TestCase):
         self.assertEqual(meeting.roles.filter(role=self.role_speaker).count(), 3)
         self.assertEqual(meeting.roles.filter(role=self.role_timer).count(), 1)
 
+    def test_populated_roles_have_no_attendance_mode(self):
+        meeting = Meeting.objects.create(
+            meeting_type=self.meeting_type,
+            date=timezone.now(),
+        )
+        self.assertTrue(
+            all(r.in_person is None for r in meeting.roles.all())
+        )
+
     def test_no_roles_without_meeting_type(self):
         meeting = Meeting.objects.create(date=timezone.now())
         self.assertEqual(meeting.roles.count(), 0)
@@ -87,6 +96,23 @@ class ToggleRoleViewTest(TestCase):
         self.client.post(reverse("toggle_role", args=[self.assignment.id]))
         self.assignment.refresh_from_db()
         self.assertIsNone(self.assignment.user)
+
+    def test_claim_sets_attendance_mode_from_role(self):
+        self.assignment.role.in_person = False
+        self.assignment.role.save()
+        self.client.login(username="member1", password="testpass")
+        self.client.post(reverse("toggle_role", args=[self.assignment.id]))
+        self.assignment.refresh_from_db()
+        self.assertFalse(self.assignment.in_person)
+
+    def test_drop_clears_attendance_mode(self):
+        self.assignment.user = self.user
+        self.assignment.in_person = True
+        self.assignment.save()
+        self.client.login(username="member1", password="testpass")
+        self.client.post(reverse("toggle_role", args=[self.assignment.id]))
+        self.assignment.refresh_from_db()
+        self.assertIsNone(self.assignment.in_person)
 
     def test_cannot_take_occupied_role(self):
         self.assignment.user = self.user2
@@ -209,6 +235,25 @@ class EmailUtilsTest(TestCase):
         messages = mock_send.call_args[0][0]
         self.assertEqual(len(messages), 1)
         self.assertIn("Speaker", messages[0][0])
+
+    @patch("meetings.utils.send_mass_mail")
+    def test_reminder_includes_attendance_mode(self, mock_send):
+        from .utils import send_meeting_reminders
+
+        self.assignment.in_person = False
+        self.assignment.save()
+        send_meeting_reminders(self.meeting)
+        body = mock_send.call_args[0][0][0][1]
+        self.assertIn("(Remote)", body)
+
+    @patch("meetings.utils.send_mass_mail")
+    def test_reminder_omits_mode_when_unspecified(self, mock_send):
+        from .utils import send_meeting_reminders
+
+        send_meeting_reminders(self.meeting)
+        body = mock_send.call_args[0][0][0][1]
+        self.assertNotIn("(Remote)", body)
+        self.assertNotIn("(In Person)", body)
 
     @patch("meetings.utils.send_mass_mail")
     def test_send_feedback(self, mock_send):

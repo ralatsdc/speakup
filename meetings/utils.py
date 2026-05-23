@@ -26,10 +26,17 @@ def send_meeting_reminders(meeting):
         if not user.email:
             continue
 
+        if assignment.in_person is True:
+            mode = " (In Person)"
+        elif assignment.in_person is False:
+            mode = " (Remote)"
+        else:
+            mode = ""
+
         subject = f"Reminder: You are {assignment.role.name} on {meeting.date.date()}"
         body = (
             f"Hi {user.first_name},\n\n"
-            f"This is a reminder that you are signed up as **{assignment.role.name}** "
+            f"This is a reminder that you are signed up as **{assignment.role.name}**{mode} "
             f"for the meeting on {meeting.date.strftime('%A, %B %d')}.\n\n"
             f"Please arrive by {meeting.date.strftime('%I:%M %p')}.\n"
             f"Theme: {meeting.theme}\n\n"

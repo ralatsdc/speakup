@@ -187,8 +187,8 @@ class MeetingAdmin(admin.ModelAdmin):
 
 @admin.register(MeetingRole)
 class MeetingRoleAdmin(admin.ModelAdmin):
-    list_display = ("meeting", "role", "user", "sort_order")
-    list_filter = ("meeting", "role")
+    list_display = ("meeting", "role", "user", "in_person", "sort_order")
+    list_filter = ("meeting", "role", "in_person")
     list_editable = ("user", "sort_order")
 
 

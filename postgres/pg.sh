@@ -222,10 +222,32 @@ fi
 if [[ $dump -eq 1 ]]; then
     pg_dump -h $PGHOST -p $PGPORT -d $PGDATABASE -U $PGUSER -w -F t > dump-$(date "+%Y-%m-%dT%H:%M:%S").tar
 elif [[ $convert -eq 1 ]]; then
-    sqlite=db-$(date "+%Y-%m-%dT%H:%M:%S").sqlite3
-    db-to-sqlite "postgresql://$PGUSER:$PGPASSWORD@$PGHOST:$PGPORT/railway" $sqlite --all
+    # Build the SQLite schema with Django (correct PK/UNIQUE/FK), then copy
+    # only data from Railway
+    db_name=db-$(date "+%Y-%m-%dT%H:%M:%S").sqlite3
+    db_path="$SCRIPT_DIR/$db_name"
+    py_path="$SCRIPT_DIR/../.venv/bin/python"
+    mang_path="$SCRIPT_DIR/../manage.py"
+    data_path="$SCRIPT_DIR/_convert_data.json"
+
+    # Canonical schema (also auto-seeds contenttypes + permissions)
+    DATABASE_URL="sqlite:///$db_path" "$py_path" "$mang_path" migrate --noinput
+
+    # Dump Railway rows. Exclude what migrate already seeded; serialize FKs to
+    # those by natural key so they re-resolve against the fresh rows.
+    DATABASE_URL="postgresql://$PGUSER:$PGPASSWORD@$PGHOST:$PGPORT/$PGDATABASE" \
+        "$py_path" "$mang_path" dumpdata --natural-foreign \
+        --exclude contenttypes --exclude auth.permission \
+        --exclude sessions.session --exclude admin.logentry \
+        -o "$data_path"
+
+    # Load the rows into the Django-built schema
+    DATABASE_URL="sqlite:///$db_path" "$py_path" "$mang_path" loaddata "$data_path"
+    rm -f "$data_path"
+
+    # Link to the database for local development
     pushd ..
-    ln -fs postgres/$sqlite db.sqlite3
+    ln -fs postgres/$db_name db.sqlite3
     popd
 elif [[ $prune -eq 1 ]]; then
     prune_backups

@@ -166,3 +166,61 @@ Configured for Railway:
 - SSL termination at Railway's load balancer; `SECURE_PROXY_SSL_HEADER` trusts `X-Forwarded-Proto`
 
 Set `DEBUG=False` and provide `DATABASE_URL`, `SECRET_KEY`, `BREVO_API_KEY`, `SITE_URL`, and `ALLOWED_HOSTS` as environment variables.
+
+## Database Backups & Local Data (`postgres/pg.sh`)
+
+Production runs PostgreSQL on Railway. `postgres/pg.sh` backs that database up
+and produces a local SQLite copy to develop against. It reads the Railway
+connection details from `postgres/.env` (`PGHOST`, `PGPORT`, `PGDATABASE`,
+`PGUSER`, `PGPASSWORD` — not committed).
+
+| Option | Action |
+|---|---|
+| `-d` | Dump Railway to a timestamped `postgres/dump-<ts>.tar` (`pg_dump`, custom format) |
+| `-c` | Convert Railway into a local SQLite DB and point `db.sqlite3` at it |
+| `-r <file>` | Restore a `.tar` dump back into PostgreSQL (`pg_restore -c`) |
+| `-p` | Prune old dumps via GFS (Grandfather-Father-Son) rotation, with confirmation |
+| `-h` | Help; `-e`/`-x` add `set -e` / `set -x` |
+
+Exactly one of `-d`, `-c`, `-r`, `-p` per invocation. Run from the `postgres/`
+directory:
+
+```bash
+cd postgres
+bash pg.sh -d        # nightly backup
+bash pg.sh -c        # refresh local db.sqlite3 from prod
+bash pg.sh -p        # tidy old dumps
+```
+
+A launchd agent (`postgres/com.user.pgdump.plist`) runs `pg.sh -d` daily at
+15:00. Load/unload it with
+`launchctl load|unload ~/Library/LaunchAgents/com.user.pgdump.plist`.
+
+### How `-c` builds the SQLite file
+
+`-c` does **not** translate the Postgres schema directly. It runs
+`manage.py migrate` against a fresh SQLite file so **Django owns the schema**
+(correct `PRIMARY KEY` / `UNIQUE` / foreign keys), then copies only data with
+`dumpdata --natural-foreign | loaddata`. `contenttypes`, `auth.permission`,
+`sessions.session`, and `admin.logentry` are excluded because `migrate`
+re-seeds content types and permissions; `--natural-foreign` lets FKs to them
+re-resolve against the fresh rows.
+
+Earlier the script used `db-to-sqlite`, which infers the schema from data and
+drops `PRIMARY KEY`/`UNIQUE` on some tables. SQLite doesn't enforce FKs during
+normal ORM use, so the app still ran — but Django runs `PRAGMA
+foreign_key_check` at the end of *every schema-altering migration*, which then
+aborted with `foreign key mismatch`. Letting Django build the schema removes
+that failure class. Do not revert `-c` to `db-to-sqlite`.
+
+Caveat: `migrate` applies *local* migrations, so the local schema may lead
+prod. That is fine for additive changes, but if a local migration removes or
+renames a column still present on Railway, `dumpdata` against Railway will
+fail until prod catches up.
+
+Verify a generated file:
+
+```bash
+sqlite3 postgres/db-<ts>.sqlite3 "PRAGMA foreign_key_check;"   # empty = healthy
+python manage.py migrate --check                               # exit 0
+```
