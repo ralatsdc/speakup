@@ -31,13 +31,26 @@ def remove_guest(modeladmin, request, queryset):
 
 @admin.action(description="Make Officer")
 def make_officer(modeladmin, request, queryset):
-    count = queryset.update(is_officer=True)
+    # Iterate + save() so the post_save signal (members/signals.py) fires
+    # and grants is_staff + Officers-group membership. queryset.update()
+    # would silently skip the sync.
+    count = 0
+    for user in queryset:
+        if not user.is_officer:
+            user.is_officer = True
+            user.save(update_fields=["is_officer"])
+            count += 1
     modeladmin.message_user(request, f"{count} user(s) marked as officer.")
 
 
 @admin.action(description="Remove Officer")
 def remove_officer(modeladmin, request, queryset):
-    count = queryset.update(is_officer=False)
+    count = 0
+    for user in queryset:
+        if user.is_officer:
+            user.is_officer = False
+            user.save(update_fields=["is_officer"])
+            count += 1
     modeladmin.message_user(request, f"{count} user(s) unmarked as officer.")
 
 
