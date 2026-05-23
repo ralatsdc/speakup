@@ -1,4 +1,5 @@
 from django import forms
+from django.conf import settings
 from django.contrib import admin, messages
 from django.db import models
 from django.http import HttpResponseRedirect
@@ -137,6 +138,17 @@ class MeetingAdmin(admin.ModelAdmin):
         return HttpResponseRedirect(f"../../{meeting_id}/change/")
 
     def process_zoom_import(self, request, meeting_id):
+        # Feature is currently disabled — the underlying code is preserved
+        # in meetings/zoom.py for if/when the registration flow comes back.
+        if not settings.ZOOM_REGISTRATION_ENABLED:
+            self.message_user(
+                request,
+                "Zoom registrant import is disabled "
+                "(set ZOOM_REGISTRATION_ENABLED=true to re-enable).",
+                messages.WARNING,
+            )
+            return HttpResponseRedirect(f"../../{meeting_id}/change/")
+
         from .zoom import import_zoom_registrants
 
         meeting = self.get_object(request, meeting_id)
@@ -181,8 +193,17 @@ class MeetingAdmin(admin.ModelAdmin):
         if "_send-feedback" in request.POST:
             return self.process_feedback(request, obj.pk)
         if "_import-zoom" in request.POST:
+            # process_zoom_import enforces ZOOM_REGISTRATION_ENABLED itself.
             return self.process_zoom_import(request, obj.pk)
         return super().response_change(request, obj)
+
+    def change_view(self, request, object_id, form_url="", extra_context=None):
+        """Expose the Zoom-registration feature flag to the change-form template."""
+        extra_context = extra_context or {}
+        extra_context["zoom_registration_enabled"] = settings.ZOOM_REGISTRATION_ENABLED
+        return super().change_view(
+            request, object_id, form_url=form_url, extra_context=extra_context
+        )
 
 
 @admin.register(MeetingRole)
