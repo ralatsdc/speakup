@@ -589,3 +589,106 @@ class ZoomRegistrationFlagTest(TestCase):
         )
         self.assertEqual(response.status_code, 302)
         mock_import.assert_not_called()
+
+
+class EvaluatorPairingTest(TestCase):
+    """MeetingRole.evaluates self-FK: validation, reverse lookup, SET_NULL."""
+
+    def setUp(self):
+        self.speaker_role = Role.objects.create(
+            name="Speaker", is_speech_role=True, is_evaluated_role=True
+        )
+        self.eval_role = Role.objects.create(
+            name="Evaluator (Speech)",
+            is_speech_role=True,
+            is_evaluator_role=True,
+        )
+        self.timer_role = Role.objects.create(name="Timer")
+        self.meeting = Meeting.objects.create(date=timezone.now())
+        self.other_meeting = Meeting.objects.create(date=timezone.now())
+        self.speaker = MeetingRole.objects.create(
+            meeting=self.meeting, role=self.speaker_role, sort_order=0
+        )
+        self.evaluator = MeetingRole.objects.create(
+            meeting=self.meeting, role=self.eval_role, sort_order=1
+        )
+
+    def test_pairing_and_reverse_lookup(self):
+        self.evaluator.evaluates = self.speaker
+        self.evaluator.full_clean()
+        self.evaluator.save()
+        self.assertEqual(self.speaker.evaluators.get(), self.evaluator)
+
+    def test_cannot_evaluate_self(self):
+        from django.core.exceptions import ValidationError
+        self.evaluator.evaluates = self.evaluator
+        with self.assertRaises(ValidationError):
+            self.evaluator.full_clean()
+
+    def test_cannot_evaluate_across_meetings(self):
+        from django.core.exceptions import ValidationError
+        other_speaker = MeetingRole.objects.create(
+            meeting=self.other_meeting, role=self.speaker_role, sort_order=0
+        )
+        self.evaluator.evaluates = other_speaker
+        with self.assertRaises(ValidationError):
+            self.evaluator.full_clean()
+
+    def test_deleting_target_sets_null(self):
+        self.evaluator.evaluates = self.speaker
+        self.evaluator.save()
+        self.speaker.delete()
+        self.evaluator.refresh_from_db()
+        self.assertIsNone(self.evaluator.evaluates)
+
+    def test_non_evaluator_role_cannot_set_evaluates(self):
+        # A Speaker row with evaluates set must be rejected — only evaluator
+        # roles can carry a target.
+        from django.core.exceptions import ValidationError
+        other_speaker = MeetingRole.objects.create(
+            meeting=self.meeting, role=self.speaker_role, sort_order=2
+        )
+        self.speaker.evaluates = other_speaker
+        with self.assertRaises(ValidationError):
+            self.speaker.full_clean()
+
+    def test_cannot_target_non_evaluated_role(self):
+        # An evaluator pointing at a non-evaluated row (e.g. Timer) is rejected.
+        from django.core.exceptions import ValidationError
+        timer = MeetingRole.objects.create(
+            meeting=self.meeting, role=self.timer_role, sort_order=2
+        )
+        self.evaluator.evaluates = timer
+        with self.assertRaises(ValidationError):
+            self.evaluator.full_clean()
+
+    def test_migration_flagged_existing_evaluator_role_names(self):
+        # The roles created in this test had is_evaluator_role passed
+        # explicitly; this test pins the data-migration contract by name.
+        self.assertTrue(self.eval_role.is_evaluator_role)
+        self.assertFalse(self.speaker_role.is_evaluator_role)
+
+    def test_speaker_role_is_evaluated_role(self):
+        # Mirror contract on the target side.
+        self.assertTrue(self.speaker_role.is_evaluated_role)
+        self.assertFalse(self.eval_role.is_evaluated_role)
+        self.assertFalse(self.timer_role.is_evaluated_role)
+
+    def test_change_view_exposes_evaluator_role_ids_for_inline_js(self):
+        # The inline JS reads evaluator role IDs from a json_script element
+        # rendered into the change form.
+        admin_user = User.objects.create_user(
+            username="root", email="root@example.com",
+            password="pass", is_staff=True, is_superuser=True,
+        )
+        self.client.login(username="root", password="pass")
+        response = self.client.get(
+            reverse("admin:meetings_meeting_change", args=[self.meeting.pk])
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'id="evaluator-role-ids"')
+        # The Evaluator (Speech) role's id should be in the rendered JSON.
+        self.assertContains(response, str(self.eval_role.pk))
+        # CSS + JS files are referenced via the inline's Media class.
+        self.assertContains(response, "evaluator_pairing.css")
+        self.assertContains(response, "evaluator_pairing.js")

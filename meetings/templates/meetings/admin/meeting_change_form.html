@@ -1,5 +1,12 @@
 {% extends 'admin/change_form.html' %}
 
+{% block extrahead %}
+    {{ block.super }}
+    {# IDs that meetings/admin/evaluator_pairing.js reads to live-toggle the #}
+    {# `evaluates` field row on the MeetingRole inline. #}
+    {{ evaluator_role_ids|json_script:"evaluator-role-ids" }}
+{% endblock %}
+
 {% block submit_buttons_bottom %}
     {{ block.super }}
     <div class="submit-row">

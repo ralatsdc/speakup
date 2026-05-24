@@ -64,6 +64,14 @@
                                         {% if assignment.in_person is not None %}
                                             <span class="badge rounded-pill {% if assignment.in_person %}bg-success{% else %}bg-secondary{% endif %} ms-1">{% if assignment.in_person %}In Person{% else %}Remote{% endif %}</span>
                                         {% endif %}
+                                        {% if assignment.evaluates and assignment.evaluates.user %}
+                                            <div class="small text-muted">evaluating {{ assignment.evaluates.user.first_name }} {{ assignment.evaluates.user.last_name }}</div>
+                                        {% endif %}
+                                        {% with evaluator=assignment.evaluators.first %}
+                                            {% if evaluator and evaluator.user %}
+                                                <div class="small text-muted">evaluator: {{ evaluator.user.first_name }} {{ evaluator.user.last_name }}</div>
+                                            {% endif %}
+                                        {% endwith %}
                                     {% else %}
                                         <span class="text-muted fst-italic">(Open)</span>
                                     {% endif %}
