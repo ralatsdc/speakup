@@ -2,6 +2,7 @@ from django import forms
 from django.conf import settings
 from django.contrib import admin, messages
 from django.db import models
+from django.db.models import OuterRef, Subquery
 from django.http import HttpResponseRedirect
 from django.urls import path
 
@@ -66,6 +67,10 @@ class MeetingRoleInline(admin.StackedInline):
     fk_name = "meeting"
     extra = 0
     autocomplete_fields = ["user"]
+    # Custom inline template inserts a section header before each new
+    # session group (see meetings/templates/admin/edit_inline/
+    # meetings_meetingrole_stacked.html).
+    template = "admin/edit_inline/meetings_meetingrole_stacked.html"
     # Stacked layout per MeetingRole: dropdowns cluster on row 1, evaluates
     # sits on its own row directly below them, then numeric/notes rows.
     fieldsets = (
@@ -85,12 +90,38 @@ class MeetingRoleInline(admin.StackedInline):
 
     class Media:
         # Live-toggles the `evaluates` row visibility as the role <select>
-        # changes. The server-side MeetingRole.clean() still enforces the
-        # rule, so JS-disabled clients degrade safely (evaluates may be
-        # visible on non-evaluator rows but a save will reject invalid
-        # values).
-        css = {"all": ("meetings/admin/evaluator_pairing.css",)}
+        # changes, plus styling for the session-group headers inserted by
+        # the custom inline template. Server-side MeetingRole.clean()
+        # still enforces the pairing rules, so JS-disabled clients
+        # degrade safely.
+        css = {
+            "all": (
+                "meetings/admin/evaluator_pairing.css",
+                "meetings/admin/session_grouping.css",
+            )
+        }
         js = ("meetings/admin/evaluator_pairing.js",)
+
+    def get_queryset(self, request):
+        # Order rows so they cluster under their session header on the
+        # change form. Per-meeting session order lives on MeetingSession;
+        # MeetingRole.session points at the reusable Session, so subquery
+        # for the matching MeetingSession.sort_order. Null/missing
+        # sessions sort first (templates can put them under a "no
+        # session" header).
+        return (
+            super()
+            .get_queryset(request)
+            .annotate(
+                _session_order=Subquery(
+                    MeetingSession.objects.filter(
+                        meeting=OuterRef("meeting"),
+                        session=OuterRef("session"),
+                    ).values("sort_order")[:1]
+                )
+            )
+            .order_by("_session_order", "sort_order", "id")
+        )
 
     def formfield_for_foreignkey(self, db_field, request, **kwargs):
         if db_field.name == "evaluates":

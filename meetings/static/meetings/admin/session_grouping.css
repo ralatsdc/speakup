@@ -1,0 +1,16 @@
+/* Session-group header inserted by
+   meetings/templates/admin/edit_inline/meetings_meetingrole_stacked.html
+   between consecutive MeetingRole rows that share a session. */
+.inline-group .meeting-role-session-header {
+    margin: 1.25em 0 0.5em 0;
+    padding: 0.4em 0.8em;
+    background-color: #417690;       /* matches Django admin header */
+    color: #fff;
+    font-size: 1.0em;
+    font-weight: bold;
+    border-radius: 3px;
+}
+/* Tighten spacing between the section header and the first row it covers. */
+.inline-group .meeting-role-session-header + .inline-related {
+    margin-top: 0;
+}

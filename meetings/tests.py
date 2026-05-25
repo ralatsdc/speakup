@@ -674,6 +674,50 @@ class EvaluatorPairingTest(TestCase):
         self.assertFalse(self.eval_role.is_evaluated_role)
         self.assertFalse(self.timer_role.is_evaluated_role)
 
+    def test_change_view_groups_rows_by_session_with_headers(self):
+        # Two sessions, two roles each; rows should cluster under their
+        # session-name header in MeetingSession.sort_order order.
+        from .models import MeetingSession, Session
+        prepared = Session.objects.create(name="Prepared Speeches")
+        table_topics = Session.objects.create(name="Table Topics")
+        # MeetingSession sort_order on this meeting puts Table Topics
+        # first, then Prepared Speeches — so the inline should reflect
+        # that, not alphabetical or model-default order.
+        MeetingSession.objects.create(
+            meeting=self.meeting, session=table_topics, sort_order=1
+        )
+        MeetingSession.objects.create(
+            meeting=self.meeting, session=prepared, sort_order=2
+        )
+        # Bind sessions to two more roles; speaker/evaluator from setUp
+        # don't have a session yet.
+        self.speaker.session = prepared
+        self.speaker.save()
+        self.evaluator.session = prepared
+        self.evaluator.save()
+        topicmaster = Role.objects.create(name="Topicmaster")
+        MeetingRole.objects.create(
+            meeting=self.meeting, role=topicmaster, session=table_topics, sort_order=0
+        )
+
+        admin_user = User.objects.create_user(
+            username="root2", email="root2@example.com",
+            password="pass", is_staff=True, is_superuser=True,
+        )
+        self.client.login(username="root2", password="pass")
+        response = self.client.get(
+            reverse("admin:meetings_meeting_change", args=[self.meeting.pk])
+        )
+        self.assertEqual(response.status_code, 200)
+        # Both headers should render.
+        self.assertContains(response, "meeting-role-session-header")
+        self.assertContains(response, "Table Topics")
+        self.assertContains(response, "Prepared Speeches")
+        # Table Topics group precedes Prepared Speeches (per MeetingSession
+        # sort_order), not the other way around.
+        content = response.content.decode()
+        self.assertLess(content.index("Table Topics"), content.index("Prepared Speeches"))
+
     def test_change_view_exposes_evaluator_role_ids_for_inline_js(self):
         # The inline JS reads evaluator role IDs from a json_script element
         # rendered into the change form.
