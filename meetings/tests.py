@@ -718,6 +718,33 @@ class EvaluatorPairingTest(TestCase):
         content = response.content.decode()
         self.assertLess(content.index("Table Topics"), content.index("Prepared Speeches"))
 
+    def test_change_view_rows_default_collapsed_with_summary(self):
+        # Existing rows render with .is-collapsed; new template row does not.
+        # Header shows a compact summary (role name, user, mode badge) rather
+        # than MeetingRole's __str__.
+        user = User.objects.create_user(
+            username="alice", email="alice@example.com",
+            password="pass", first_name="Alice", last_name="Smith",
+        )
+        self.speaker.user = user
+        self.speaker.in_person = True
+        self.speaker.save()
+        admin_user = User.objects.create_user(
+            username="root3", email="root3@example.com",
+            password="pass", is_staff=True, is_superuser=True,
+        )
+        self.client.login(username="root3", password="pass")
+        response = self.client.get(
+            reverse("admin:meetings_meeting_change", args=[self.meeting.pk])
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "is-collapsed")
+        self.assertContains(response, "row_collapse.css")
+        self.assertContains(response, "row_collapse.js")
+        # Compact summary, not the verbose __str__.
+        self.assertContains(response, "Alice Smith")
+        self.assertContains(response, "mr-mode-in-person")
+
     def test_change_view_exposes_evaluator_role_ids_for_inline_js(self):
         # The inline JS reads evaluator role IDs from a json_script element
         # rendered into the change form.

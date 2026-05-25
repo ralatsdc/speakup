@@ -1,7 +1,11 @@
 {# Adapted from django/contrib/admin/templates/admin/edit_inline/stacked.html #}
-{# The only addition is the {% ifchanged %} block before each row that #}
-{# inserts a session-group header. See MeetingRoleInline.get_queryset for #}
-{# the ordering that makes consecutive rows cluster by their session. #}
+{# Adds: #}
+{#  - {% ifchanged %} block before each row that inserts a session-group #}
+{#    header (see MeetingRoleInline.get_queryset for the ordering). #}
+{#  - Customized row <h3> that shows a compact summary (role + user + #}
+{#    in-person badge + pairing) instead of MeetingRole's __str__. #}
+{#  - .is-collapsed class on existing rows so JS can collapse/expand them; #}
+{#    see meetings/static/meetings/admin/row_collapse.{css,js}. #}
 {% load i18n admin_urls %}
 <div class="js-inline-admin-formset inline-group"
      id="{{ inline_admin_formset.formset.prefix }}-group"
@@ -32,9 +36,8 @@
       </h3>
     {% endifchanged %}
   {% endif %}
-  <div class="inline-related{% if inline_admin_form.original or inline_admin_form.show_url %} has_original{% endif %}{% if forloop.last and inline_admin_formset.has_add_permission %} empty-form last-related{% endif %}" id="{{ inline_admin_formset.formset.prefix }}-{% if forloop.last and inline_admin_formset.has_add_permission %}empty{% else %}{{ forloop.counter0 }}{% endif %}">
-    <h3><b>{{ inline_admin_formset.opts.verbose_name|capfirst }}:</b> <span class="inline_label">{% if inline_admin_form.original %}{{ inline_admin_form.original }}{% if inline_admin_form.model_admin.show_change_link and inline_admin_form.model_admin.has_registered_model %} <a href="{% url inline_admin_form.model_admin.opts|admin_urlname:'change' inline_admin_form.original.pk|admin_urlquote %}" class="{{ inline_admin_formset.has_change_permission|yesno:'inlinechangelink,inlineviewlink' }}">{% if inline_admin_formset.has_change_permission %}{% translate "Change" %}{% else %}{% translate "View" %}{% endif %}</a>{% endif %}
-{% else %}#{{ forloop.counter }}{% endif %}</span>
+  <div class="inline-related{% if inline_admin_form.original or inline_admin_form.show_url %} has_original{% endif %}{% if forloop.last and inline_admin_formset.has_add_permission %} empty-form last-related{% else %} is-collapsed{% endif %}" id="{{ inline_admin_formset.formset.prefix }}-{% if forloop.last and inline_admin_formset.has_add_permission %}empty{% else %}{{ forloop.counter0 }}{% endif %}">
+    <h3><span class="inline_label">{% if inline_admin_form.original %}<b>{{ inline_admin_form.original.role.name }}</b>{% if inline_admin_form.original.user %} &mdash; {{ inline_admin_form.original.user.first_name }} {{ inline_admin_form.original.user.last_name }}{% if inline_admin_form.original.in_person is True %} <span class="mr-mode mr-mode-in-person">In Person</span>{% elif inline_admin_form.original.in_person is False %} <span class="mr-mode mr-mode-remote">Remote</span>{% endif %}{% if inline_admin_form.original.evaluates and inline_admin_form.original.evaluates.user %} &rarr; evaluating {{ inline_admin_form.original.evaluates.user.first_name }} {{ inline_admin_form.original.evaluates.user.last_name }}{% endif %}{% else %} <span class="mr-open">(open)</span>{% endif %}{% if inline_admin_form.model_admin.show_change_link and inline_admin_form.model_admin.has_registered_model %} <a href="{% url inline_admin_form.model_admin.opts|admin_urlname:'change' inline_admin_form.original.pk|admin_urlquote %}" class="{{ inline_admin_formset.has_change_permission|yesno:'inlinechangelink,inlineviewlink' }}">{% if inline_admin_formset.has_change_permission %}{% translate "Change" %}{% else %}{% translate "View" %}{% endif %}</a>{% endif %}{% else %}<b>{{ inline_admin_formset.opts.verbose_name|capfirst }}:</b> #{{ forloop.counter }}{% endif %}</span>
       {% if inline_admin_form.show_url %}<a href="{{ inline_admin_form.absolute_url }}">{% translate "View on site" %}</a>{% endif %}
     {% if inline_admin_formset.formset.can_delete and inline_admin_formset.has_delete_permission and inline_admin_form.original %}<span class="delete">{{ inline_admin_form.deletion_field.field }} {{ inline_admin_form.deletion_field.label_tag }}</span>{% endif %}
     </h3>

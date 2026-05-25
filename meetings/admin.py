@@ -90,17 +90,21 @@ class MeetingRoleInline(admin.StackedInline):
 
     class Media:
         # Live-toggles the `evaluates` row visibility as the role <select>
-        # changes, plus styling for the session-group headers inserted by
-        # the custom inline template. Server-side MeetingRole.clean()
-        # still enforces the pairing rules, so JS-disabled clients
-        # degrade safely.
+        # changes; collapsible row headers; styling for the session-group
+        # headers inserted by the custom inline template. Server-side
+        # MeetingRole.clean() still enforces the pairing rules, so
+        # JS-disabled clients degrade safely.
         css = {
             "all": (
                 "meetings/admin/evaluator_pairing.css",
                 "meetings/admin/session_grouping.css",
+                "meetings/admin/row_collapse.css",
             )
         }
-        js = ("meetings/admin/evaluator_pairing.js",)
+        js = (
+            "meetings/admin/evaluator_pairing.js",
+            "meetings/admin/row_collapse.js",
+        )
 
     def get_queryset(self, request):
         # Order rows so they cluster under their session header on the
