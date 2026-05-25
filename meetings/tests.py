@@ -718,6 +718,23 @@ class EvaluatorPairingTest(TestCase):
         content = response.content.decode()
         self.assertLess(content.index("Table Topics"), content.index("Prepared Speeches"))
 
+    def test_change_view_notes_fieldset_is_collapsed_by_default(self):
+        # The notes / admin_notes fieldset uses Django's `collapse` class
+        # so the textareas stay hidden until the officer expands them.
+        admin_user = User.objects.create_user(
+            username="root4", email="root4@example.com",
+            password="pass", is_staff=True, is_superuser=True,
+        )
+        self.client.login(username="root4", password="pass")
+        response = self.client.get(
+            reverse("admin:meetings_meeting_change", args=[self.meeting.pk])
+        )
+        self.assertEqual(response.status_code, 200)
+        # Stock admin emits `class="... collapse"` on the fieldset and a
+        # summary/heading containing the fieldset name. Spot-check both.
+        self.assertContains(response, "collapse")
+        self.assertContains(response, "Notes")
+
     def test_change_view_rows_default_collapsed_with_summary(self):
         # Existing rows render with .is-collapsed; new template row does not.
         # Header shows a compact summary (role name, user, mode badge) rather

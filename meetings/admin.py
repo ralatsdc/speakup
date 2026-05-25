@@ -72,16 +72,20 @@ class MeetingRoleInline(admin.StackedInline):
     # meetings_meetingrole_stacked.html).
     template = "admin/edit_inline/meetings_meetingrole_stacked.html"
     # Stacked layout per MeetingRole: dropdowns cluster on row 1, evaluates
-    # sits on its own row directly below them, then numeric/notes rows.
+    # sits on its own row directly below them, then numeric. Notes +
+    # admin_notes live in a separate collapsed fieldset so they don't
+    # take vertical space until clicked open.
     fieldsets = (
         (None, {
             "fields": (
                 ("session", "role", "user", "in_person"),
                 "evaluates",
                 ("time_minutes", "sort_order"),
-                "notes",
-                "admin_notes",
             ),
+        }),
+        ("Notes", {
+            "classes": ("collapse",),
+            "fields": ("notes", "admin_notes"),
         }),
     )
     formfield_overrides = {
