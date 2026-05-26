@@ -1,0 +1,32 @@
+/* Filter bar above the MeetingRole inline. The accompanying JS adds
+   .filtered-out to non-matching rows and to session headers whose group
+   has no visible rows. */
+.meetingrole-filter-bar {
+    padding: 0.5em 1em;
+    background-color: #f8f8f8;
+    border-bottom: 1px solid #ddd;
+    display: flex;
+    align-items: center;
+    gap: 0.75em;
+}
+.meetingrole-filter-bar label {
+    font-weight: 600;
+    margin: 0;
+}
+.meetingrole-filter-bar input[type="search"] {
+    flex: 1;
+    max-width: 30em;
+    padding: 0.35em 0.6em;
+    font: inherit;
+}
+.meetingrole-filter-bar .meetingrole-filter-count {
+    color: #666;
+    font-size: 0.9em;
+    white-space: nowrap;
+}
+
+/* Filtered-out rows and empty session headers disappear entirely. */
+.inline-related.filtered-out,
+.meeting-role-session-header.filtered-out {
+    display: none;
+}

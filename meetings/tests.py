@@ -737,6 +737,23 @@ class EvaluatorPairingTest(TestCase):
         self.assertContains(response, "pathways_visibility.css")
         self.assertContains(response, "pathways_visibility.js")
 
+    def test_change_view_renders_meeting_role_filter_input(self):
+        # The MeetingRole inline gets a live-filter input at the top; the
+        # rendered template carries the input plus the supporting static refs.
+        admin_user = User.objects.create_user(
+            username="root7", email="root7@example.com",
+            password="pass", is_staff=True, is_superuser=True,
+        )
+        self.client.login(username="root7", password="pass")
+        response = self.client.get(
+            reverse("admin:meetings_meeting_change", args=[self.meeting.pk])
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'id="meetingrole-filter"')
+        self.assertContains(response, "meetingrole-filter-bar")
+        self.assertContains(response, "inline_filter.css")
+        self.assertContains(response, "inline_filter.js")
+
     def test_change_view_has_sticky_submit_wrapper_and_layout_css(self):
         # The custom change_form template wraps the submit area in a
         # sticky container; the MeetingAdmin Media references the

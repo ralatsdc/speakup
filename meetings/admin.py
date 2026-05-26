@@ -106,12 +106,14 @@ class MeetingRoleInline(admin.StackedInline):
                 "meetings/admin/pathways_visibility.css",
                 "meetings/admin/session_grouping.css",
                 "meetings/admin/row_collapse.css",
+                "meetings/admin/inline_filter.css",
             )
         }
         js = (
             "meetings/admin/evaluator_pairing.js",
             "meetings/admin/pathways_visibility.js",
             "meetings/admin/row_collapse.js",
+            "meetings/admin/inline_filter.js",
         )
 
     def get_queryset(self, request):

@@ -24,6 +24,17 @@
 {{ inline_admin_formset.formset.management_form }}
 {{ inline_admin_formset.formset.non_form_errors }}
 
+{# Live row filter. JS in inline_filter.js hides .inline-related rows whose #}
+{# collapsed <h3> summary doesn't contain the query, and hides session #}
+{# headers whose group has no visible rows. #}
+<div class="meetingrole-filter-bar">
+  <label for="meetingrole-filter">{% translate "Filter:" %}</label>
+  <input type="search" id="meetingrole-filter"
+         placeholder='{% translate "role, member, \"open\", \"remote\", \"evaluating\"…" %}'
+         autocomplete="off">
+  <span class="meetingrole-filter-count"></span>
+</div>
+
 {% for inline_admin_form in inline_admin_formset %}
   {% if inline_admin_form.original %}
     {% ifchanged inline_admin_form.original.session_id %}
