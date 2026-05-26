@@ -1,0 +1,35 @@
+/* Drag-to-reorder for MeetingRole inline rows. The accompanying JS
+   (inline_drag_sort.js) uses SortableJS to reorder rows in the DOM and
+   rewrite each row's sort_order input to match the new visual order. */
+
+/* The drag handle lives at the start of each row's <h3>. It's also the
+   only valid initiator for the Sortable drag (handle option). */
+.inline-related h3 .meetingrole-drag-handle {
+    display: inline-block;
+    cursor: grab;
+    color: #999;
+    margin-right: 0.5em;
+    user-select: none;
+    font-size: 0.95em;
+}
+.inline-related h3 .meetingrole-drag-handle:hover {
+    color: #333;
+}
+.inline-related h3 .meetingrole-drag-handle:active,
+.meetingrole-drag-ghost h3 .meetingrole-drag-handle {
+    cursor: grabbing;
+}
+
+/* SortableJS adds these classes to the dragged element and its placeholder.
+   The ghost class is the dropped-target preview. */
+.meetingrole-drag-ghost {
+    opacity: 0.45;
+    background-color: #fffbe6;
+}
+
+/* Drag controls sort_order — hide the numeric field. The data still
+   round-trips through the hidden input element since CSS display:none
+   only hides it visually. */
+.inline-related .form-row.field-sort_order {
+    display: none;
+}

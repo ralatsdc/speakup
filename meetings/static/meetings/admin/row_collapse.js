@@ -15,7 +15,9 @@
     "use strict";
 
     var INLINE_ROW = ".inline-related";
-    var INTERACTIVE_IN_HEADER = "input, label, a";
+    // Clicks on form controls, links, and the drag handle should not
+    // toggle the row's collapse state.
+    var INTERACTIVE_IN_HEADER = "input, label, a, .meetingrole-drag-handle";
 
     function onClick(event) {
         var header = event.target.closest(INLINE_ROW + " > h3");

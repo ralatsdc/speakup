@@ -81,7 +81,11 @@ class MeetingRoleInline(admin.StackedInline):
                 ("session", "role", "user", "in_person"),
                 "evaluates",
                 ("pathways_path", "pathways_level", "pathways_project"),
-                ("time_minutes", "sort_order"),
+                "time_minutes",
+                # sort_order is hidden by inline_drag_sort.css — drag-to-
+                # reorder writes to it via JS. Kept in the fieldset so the
+                # form submits the updated value.
+                "sort_order",
             ),
         }),
         ("Notes", {
@@ -107,6 +111,7 @@ class MeetingRoleInline(admin.StackedInline):
                 "meetings/admin/session_grouping.css",
                 "meetings/admin/row_collapse.css",
                 "meetings/admin/inline_filter.css",
+                "meetings/admin/inline_drag_sort.css",
             )
         }
         js = (
@@ -114,6 +119,11 @@ class MeetingRoleInline(admin.StackedInline):
             "meetings/admin/pathways_visibility.js",
             "meetings/admin/row_collapse.js",
             "meetings/admin/inline_filter.js",
+            # SortableJS via CDN (Django Media supports absolute URLs).
+            # Loaded before inline_drag_sort.js, which depends on the
+            # `Sortable` global.
+            "https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js",
+            "meetings/admin/inline_drag_sort.js",
         )
 
     def get_queryset(self, request):

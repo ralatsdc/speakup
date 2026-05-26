@@ -737,6 +737,37 @@ class EvaluatorPairingTest(TestCase):
         self.assertContains(response, "pathways_visibility.css")
         self.assertContains(response, "pathways_visibility.js")
 
+    def test_change_view_has_drag_sort_markup_and_assets(self):
+        # Drag handle on each row, data-session-id on session headers, and
+        # the SortableJS + custom drag-sort assets are referenced.
+        from .models import MeetingSession, Session
+        # Give the existing speaker a session so a header renders with a
+        # data-session-id.
+        prepared = Session.objects.create(name="Prepared Speeches")
+        MeetingSession.objects.create(
+            meeting=self.meeting, session=prepared, sort_order=1
+        )
+        self.speaker.session = prepared
+        self.speaker.save()
+
+        admin_user = User.objects.create_user(
+            username="root8", email="root8@example.com",
+            password="pass", is_staff=True, is_superuser=True,
+        )
+        self.client.login(username="root8", password="pass")
+        response = self.client.get(
+            reverse("admin:meetings_meeting_change", args=[self.meeting.pk])
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "meetingrole-drag-handle")
+        self.assertContains(
+            response,
+            'data-session-id="{}"'.format(prepared.id),
+        )
+        self.assertContains(response, "inline_drag_sort.css")
+        self.assertContains(response, "inline_drag_sort.js")
+        self.assertContains(response, "Sortable.min.js")
+
     def test_change_view_renders_meeting_role_filter_input(self):
         # The MeetingRole inline gets a live-filter input at the top; the
         # rendered template carries the input plus the supporting static refs.
