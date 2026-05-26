@@ -158,6 +158,12 @@ class MeetingAdmin(admin.ModelAdmin):
     inlines = [MeetingSessionInline, MeetingRoleInline]
     change_form_template = "meetings/admin/meeting_change_form.html"
 
+    class Media:
+        # Tightens inline row density and pins the submit area to the
+        # bottom of the viewport so officers don't scroll past 20 inline
+        # rows to save or run an action.
+        css = {"all": ("meetings/admin/meeting_change_form.css",)}
+
     def role_count_status(self, obj):
         filled = obj.roles.filter(user__isnull=False).count()
         total = obj.roles.count()

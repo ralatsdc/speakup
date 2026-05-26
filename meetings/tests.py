@@ -737,6 +737,22 @@ class EvaluatorPairingTest(TestCase):
         self.assertContains(response, "pathways_visibility.css")
         self.assertContains(response, "pathways_visibility.js")
 
+    def test_change_view_has_sticky_submit_wrapper_and_layout_css(self):
+        # The custom change_form template wraps the submit area in a
+        # sticky container; the MeetingAdmin Media references the
+        # density + sticky-save CSS file.
+        admin_user = User.objects.create_user(
+            username="root6", email="root6@example.com",
+            password="pass", is_staff=True, is_superuser=True,
+        )
+        self.client.login(username="root6", password="pass")
+        response = self.client.get(
+            reverse("admin:meetings_meeting_change", args=[self.meeting.pk])
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "meeting-admin-submit-sticky")
+        self.assertContains(response, "meeting_change_form.css")
+
     def test_change_view_notes_fieldset_is_collapsed_by_default(self):
         # The notes / admin_notes fieldset uses Django's `collapse` class
         # so the textareas stay hidden until the officer expands them.

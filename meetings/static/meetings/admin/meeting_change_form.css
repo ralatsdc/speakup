@@ -1,0 +1,59 @@
+/* Density + sticky-save tweaks for the Meeting change form. */
+
+/* --- Sticky submit area --------------------------------------------------
+   Wraps the default Save submit-row and the custom action submit-row in a
+   single container that pins to the bottom of the viewport. Two adjacent
+   sticky elements with bottom: 0 don't stack naturally; wrapping both in
+   one sticky element gives a unified bar instead. */
+.meeting-admin-submit-sticky {
+    position: sticky;
+    bottom: 0;
+    background: #fff;
+    z-index: 10;
+    border-top: 1px solid #ccc;
+    box-shadow: 0 -2px 4px rgba(0, 0, 0, 0.08);
+}
+/* The action submit-row sits below the Save row; collapse the visual gap
+   between them so they read as one bar. */
+.meeting-admin-submit-sticky .submit-row + .submit-row {
+    margin-top: 0;
+    padding-top: 0.4em;
+    border-top: 1px dashed #eee;
+}
+/* Help line inside the action submit-row was bottom-margined; pull it in. */
+.meeting-admin-submit-sticky .submit-row p.help {
+    margin: 0.25em 0 0 0;
+    font-size: 0.85em;
+}
+
+/* --- Inline-row density --------------------------------------------------
+   With rows collapsed by default (row_collapse.css), the bulk of the form
+   is a tall stack of <h3> summaries. The stock h3 spacing eats real estate;
+   trim it so 20 rows fit in a glance. */
+.inline-group .inline-related {
+    margin-bottom: 0;
+}
+.inline-group .inline-related > h3 {
+    padding: 4px 12px;
+    margin: 0;
+    border-bottom: 1px solid #eee;
+}
+/* Highlight the row that's currently expanded so it's easy to find while
+   scrolling. */
+.inline-group .inline-related:not(.is-collapsed) > h3 {
+    background-color: #f0f6fc;
+    border-bottom-color: #cad9e6;
+}
+/* The fieldset rendered inside an expanded row gets a thin divider below it
+   so consecutive expanded rows don't visually merge. */
+.inline-group .inline-related > fieldset.module {
+    border-bottom: 1px solid #ddd;
+    padding-bottom: 0.4em;
+    margin-bottom: 0;
+}
+
+/* Session-group headers were a bit chunky next to the new tight rows. */
+.inline-group .meeting-role-session-header {
+    margin: 0.75em 0 0.25em 0;
+    padding: 0.3em 0.8em;
+}
