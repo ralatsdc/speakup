@@ -32,7 +32,7 @@
                       rows="2" placeholder="Optional">{{ assignment.notes }}</textarea>
         </div>
 
-        {% if assignment.role.is_speech_role %}
+        {% if assignment.role.shows_pathways_fields %}
         <!-- Pathways details (speech roles only) -->
         <div class="mb-3">
             <label for="pathways-path-{{ assignment.id }}" class="form-label fw-bold">Pathways Path</label>

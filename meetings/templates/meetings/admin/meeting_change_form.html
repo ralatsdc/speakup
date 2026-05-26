@@ -5,6 +5,9 @@
     {# IDs that meetings/admin/evaluator_pairing.js reads to live-toggle the #}
     {# `evaluates` field row on the MeetingRole inline. #}
     {{ evaluator_role_ids|json_script:"evaluator-role-ids" }}
+    {# IDs that meetings/admin/pathways_visibility.js reads to live-toggle #}
+    {# the Pathways fields (path / level / project) on the MeetingRole inline. #}
+    {{ pathways_role_ids|json_script:"pathways-role-ids" }}
 {% endblock %}
 
 {% block submit_buttons_bottom %}

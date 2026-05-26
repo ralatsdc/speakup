@@ -356,7 +356,7 @@ def toggle_role(request, role_id):
         assignment.notes = request.POST.get("notes", "").strip()
 
         # Pathways details only apply to speech roles.
-        if assignment.role.is_speech_role:
+        if assignment.role.shows_pathways_fields:
             assignment.pathways_path = request.POST.get("pathways_path", "").strip()
             level = request.POST.get("pathways_level", "").strip()
             assignment.pathways_level = int(level) if level.isdigit() else None

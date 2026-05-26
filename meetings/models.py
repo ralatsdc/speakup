@@ -13,7 +13,11 @@ class Role(models.Model):
     """A role that can be assigned at a meeting (e.g. Toastmaster, Timer, Speaker)."""
 
     name = models.CharField(max_length=100)
-    is_speech_role = models.BooleanField(default=False)
+    shows_pathways_fields = models.BooleanField(
+        default=False,
+        help_text="When True, the sign-up dialog asks the member for their "
+        "Pathways path/level/project for this role (Speaker, Ranter, etc.).",
+    )
     is_evaluator_role = models.BooleanField(
         default=False,
         help_text="Marks roles that evaluate a speech, rant, or table-topics "

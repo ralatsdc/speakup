@@ -14,7 +14,7 @@ class MeetingSignalTest(TestCase):
     """Test that creating a Meeting auto-populates roles from its MeetingType."""
 
     def setUp(self):
-        self.role_speaker = Role.objects.create(name="Speaker", is_speech_role=True)
+        self.role_speaker = Role.objects.create(name="Speaker", shows_pathways_fields=True)
         self.role_timer = Role.objects.create(name="Timer")
         self.meeting_type = MeetingType.objects.create(name="Regular")
         MeetingTypeItem.objects.create(
@@ -145,7 +145,7 @@ class ToggleRoleViewTest(TestCase):
 
     def _speech_assignment(self, **kwargs):
         """Create an open MeetingRole for a speech role on the test meeting."""
-        speech_role = Role.objects.create(name="Speaker", is_speech_role=True)
+        speech_role = Role.objects.create(name="Speaker", shows_pathways_fields=True)
         return MeetingRole.objects.create(
             meeting=self.meeting, role=speech_role, sort_order=1, **kwargs
         )
@@ -342,7 +342,7 @@ class ConvertGuestServiceTest(TestCase):
 
 class EmailUtilsTest(TestCase):
     def setUp(self):
-        self.role = Role.objects.create(name="Speaker", is_speech_role=True)
+        self.role = Role.objects.create(name="Speaker", shows_pathways_fields=True)
         self.meeting = Meeting.objects.create(
             date=timezone.now(), theme="Leadership"
         )
@@ -596,11 +596,11 @@ class EvaluatorPairingTest(TestCase):
 
     def setUp(self):
         self.speaker_role = Role.objects.create(
-            name="Speaker", is_speech_role=True, is_evaluated_role=True
+            name="Speaker", shows_pathways_fields=True, is_evaluated_role=True
         )
         self.eval_role = Role.objects.create(
             name="Evaluator (Speech)",
-            is_speech_role=True,
+            shows_pathways_fields=True,
             is_evaluator_role=True,
         )
         self.timer_role = Role.objects.create(name="Timer")
@@ -717,6 +717,25 @@ class EvaluatorPairingTest(TestCase):
         # sort_order), not the other way around.
         content = response.content.decode()
         self.assertLess(content.index("Table Topics"), content.index("Prepared Speeches"))
+
+    def test_change_view_exposes_pathways_role_ids_for_toggle(self):
+        # The inline JS reads pathways role IDs from a json_script element to
+        # live-toggle the Pathways fields.
+        admin_user = User.objects.create_user(
+            username="root5", email="root5@example.com",
+            password="pass", is_staff=True, is_superuser=True,
+        )
+        self.client.login(username="root5", password="pass")
+        response = self.client.get(
+            reverse("admin:meetings_meeting_change", args=[self.meeting.pk])
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'id="pathways-role-ids"')
+        # Speaker shows_pathways_fields=True in setUp, so its pk should be in
+        # the rendered JSON.
+        self.assertContains(response, str(self.speaker_role.pk))
+        self.assertContains(response, "pathways_visibility.css")
+        self.assertContains(response, "pathways_visibility.js")
 
     def test_change_view_notes_fieldset_is_collapsed_by_default(self):
         # The notes / admin_notes fieldset uses Django's `collapse` class

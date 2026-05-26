@@ -14,13 +14,13 @@ from .utils import send_meeting_reminders
 class RoleAdmin(admin.ModelAdmin):
     list_display = (
         "name",
-        "is_speech_role",
+        "shows_pathways_fields",
         "is_evaluator_role",
         "is_evaluated_role",
         "points",
         "time_minutes",
     )
-    list_filter = ("is_speech_role", "is_evaluator_role", "is_evaluated_role")
+    list_filter = ("shows_pathways_fields", "is_evaluator_role", "is_evaluated_role")
 
 
 @admin.register(Session)
@@ -80,6 +80,7 @@ class MeetingRoleInline(admin.StackedInline):
             "fields": (
                 ("session", "role", "user", "in_person"),
                 "evaluates",
+                ("pathways_path", "pathways_level", "pathways_project"),
                 ("time_minutes", "sort_order"),
             ),
         }),
@@ -93,20 +94,23 @@ class MeetingRoleInline(admin.StackedInline):
     }
 
     class Media:
-        # Live-toggles the `evaluates` row visibility as the role <select>
-        # changes; collapsible row headers; styling for the session-group
-        # headers inserted by the custom inline template. Server-side
-        # MeetingRole.clean() still enforces the pairing rules, so
-        # JS-disabled clients degrade safely.
+        # Live-toggles for `evaluates` (only on evaluator roles) and the
+        # three Pathways fields (only on speech roles); collapsible row
+        # headers; styling for session-group headers inserted by the
+        # custom inline template. Toggles are visual only; server-side
+        # MeetingRole.clean() / model validation still enforce the rules,
+        # so JS-disabled clients degrade safely.
         css = {
             "all": (
                 "meetings/admin/evaluator_pairing.css",
+                "meetings/admin/pathways_visibility.css",
                 "meetings/admin/session_grouping.css",
                 "meetings/admin/row_collapse.css",
             )
         }
         js = (
             "meetings/admin/evaluator_pairing.js",
+            "meetings/admin/pathways_visibility.js",
             "meetings/admin/row_collapse.js",
         )
 
@@ -280,6 +284,10 @@ class MeetingAdmin(admin.ModelAdmin):
         # IDs the inline JS uses to live-toggle the evaluates field row.
         extra_context["evaluator_role_ids"] = list(
             Role.objects.filter(is_evaluator_role=True).values_list("id", flat=True)
+        )
+        # IDs the inline JS uses to live-toggle the Pathways fields.
+        extra_context["pathways_role_ids"] = list(
+            Role.objects.filter(shows_pathways_fields=True).values_list("id", flat=True)
         )
         return super().change_view(
             request, object_id, form_url=form_url, extra_context=extra_context
