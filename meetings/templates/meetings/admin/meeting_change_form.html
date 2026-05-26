@@ -10,6 +10,24 @@
     {{ pathways_role_ids|json_script:"pathways-role-ids" }}
 {% endblock %}
 
+{% block field_sets %}
+    {# Identity banner: read-only summary of the meeting. Shown only when #}
+    {# editing an existing meeting (original is None on the add form). #}
+    {% if original %}
+    <div class="meeting-admin-banner">
+        <div class="meeting-admin-banner-date">
+            {{ original.date|date:"l, F j, Y" }}
+        </div>
+        <div class="meeting-admin-banner-meta">
+            {{ original.date|time:"g:i A" }}{% if original.meeting_type %}
+            &middot; {{ original.meeting_type }}{% endif %}{% if original.theme %}
+            &middot; Theme: {{ original.theme }}{% endif %}
+        </div>
+    </div>
+    {% endif %}
+    {{ block.super }}
+{% endblock %}
+
 {% block submit_buttons_bottom %}
     {# Wrap both submit-rows in one sticky container so they pin to the #}
     {# bottom of the viewport together (see meeting_change_form.css). #}

@@ -737,6 +737,35 @@ class EvaluatorPairingTest(TestCase):
         self.assertContains(response, "pathways_visibility.css")
         self.assertContains(response, "pathways_visibility.js")
 
+    def test_change_view_has_identity_banner_and_collapsed_sections(self):
+        # The change form renders the read-only meeting banner, a
+        # "Meeting details" fieldset (collapsed), and the MeetingSession
+        # inline is also collapsed.
+        from meetings.models import MeetingType
+        meeting_type = MeetingType.objects.create(name="Regular")
+        self.meeting.meeting_type = meeting_type
+        self.meeting.theme = "Conviction"
+        self.meeting.save()
+
+        admin_user = User.objects.create_user(
+            username="root9", email="root9@example.com",
+            password="pass", is_staff=True, is_superuser=True,
+        )
+        self.client.login(username="root9", password="pass")
+        response = self.client.get(
+            reverse("admin:meetings_meeting_change", args=[self.meeting.pk])
+        )
+        self.assertEqual(response.status_code, 200)
+        # Banner renders the meeting identity (date + type + theme).
+        self.assertContains(response, "meeting-admin-banner")
+        self.assertContains(response, "Regular")
+        self.assertContains(response, "Conviction")
+        # "Meeting details" fieldset is present (per MeetingAdmin.fieldsets).
+        self.assertContains(response, "Meeting details")
+        # MeetingSession inline rendered with classes=("collapse",); the
+        # inline-group div carries the formset prefix in its id.
+        self.assertContains(response, 'id="meeting_sessions-group"')
+
     def test_change_view_has_drag_sort_markup_and_assets(self):
         # Drag handle on each row, data-session-id on session headers, and
         # the SortableJS + custom drag-sort assets are referenced.

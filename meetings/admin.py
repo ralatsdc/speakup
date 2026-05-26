@@ -57,6 +57,11 @@ class MeetingTypeAdmin(admin.ModelAdmin):
 class MeetingSessionInline(admin.TabularInline):
     model = MeetingSession
     extra = 0
+    # Sessions are copied from the MeetingType template at creation and
+    # almost never change per-meeting. Collapse the whole inline so it
+    # doesn't take page space until an officer explicitly needs to edit
+    # it.
+    classes = ("collapse",)
     formfield_overrides = {
         models.TextField: {"widget": forms.Textarea(attrs={"rows": 2, "cols": 30})},
     }
@@ -169,6 +174,20 @@ class MeetingAdmin(admin.ModelAdmin):
     list_display = ("date", "meeting_type", "theme", "role_count_status")
     inlines = [MeetingSessionInline, MeetingRoleInline]
     change_form_template = "meetings/admin/meeting_change_form.html"
+    # Word of the day is the only field that changes regularly after a
+    # meeting is created from its template; everything else (date,
+    # meeting_type, theme, zoom_link) is set once and rarely touched.
+    # Surface word_of_the_day on its own, tuck the rest behind a
+    # collapsed section.
+    fieldsets = (
+        (None, {
+            "fields": ("word_of_the_day",),
+        }),
+        ("Meeting details", {
+            "classes": ("collapse",),
+            "fields": ("meeting_type", "date", "theme", "zoom_link"),
+        }),
+    )
 
     class Media:
         # Tightens inline row density and pins the submit area to the

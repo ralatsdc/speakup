@@ -1,5 +1,27 @@
 /* Density + sticky-save tweaks for the Meeting change form. */
 
+/* --- Identity banner ----------------------------------------------------
+   Read-only summary at the top of the change form so officers always see
+   which meeting they're editing without expanding the (collapsed) details
+   fieldset. */
+.meeting-admin-banner {
+    background: linear-gradient(135deg, #417690, #5b8bb3);
+    color: #fff;
+    padding: 1em 1.25em;
+    border-radius: 4px;
+    margin: 0 0 1.25em 0;
+}
+.meeting-admin-banner-date {
+    font-size: 1.3em;
+    font-weight: 600;
+}
+.meeting-admin-banner-meta {
+    font-size: 0.95em;
+    opacity: 0.92;
+    margin-top: 0.25em;
+}
+
+
 /* --- Sticky submit area --------------------------------------------------
    Wraps the default Save submit-row and the custom action submit-row in a
    single container that pins to the bottom of the viewport. Two adjacent
