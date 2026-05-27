@@ -97,9 +97,14 @@ class ToggleRoleViewTest(TestCase):
         self.assignment.refresh_from_db()
         self.assertIsNone(self.assignment.user)
 
-    def test_claim_sets_attendance_mode_from_role(self):
-        self.assignment.role.in_person = False
-        self.assignment.role.save()
+    def test_claim_sets_attendance_mode_from_template(self):
+        # MeetingTypeItem expects Remote; claim with no body falls back to it.
+        meeting_type = MeetingType.objects.create(name="Regular")
+        MeetingTypeItem.objects.create(
+            meeting_type=meeting_type, role=self.assignment.role, in_person=False
+        )
+        self.meeting.meeting_type = meeting_type
+        self.meeting.save()
         self.client.login(username="member1", password="testpass")
         self.client.post(reverse("toggle_role", args=[self.assignment.id]))
         self.assignment.refresh_from_db()
@@ -135,6 +140,129 @@ class ToggleRoleViewTest(TestCase):
     def test_requires_login(self):
         response = self.client.post(reverse("toggle_role", args=[self.assignment.id]))
         self.assertEqual(response.status_code, 302)
+
+    # --- Sign-up dialog (Block B) ---
+
+    def _speech_assignment(self, **kwargs):
+        """Create an open MeetingRole for a speech role on the test meeting."""
+        speech_role = Role.objects.create(name="Speaker", is_speech_role=True)
+        return MeetingRole.objects.create(
+            meeting=self.meeting, role=speech_role, sort_order=1, **kwargs
+        )
+
+    def test_signup_form_renders(self):
+        self.client.login(username="member1", password="testpass")
+        response = self.client.get(
+            reverse("signup_role_form", args=[self.assignment.id])
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "In Person")
+        self.assertContains(response, "Remote")
+
+    def test_signup_form_requires_login(self):
+        response = self.client.get(
+            reverse("signup_role_form", args=[self.assignment.id])
+        )
+        self.assertEqual(response.status_code, 302)
+
+    def test_signup_form_hides_pathways_for_non_speech_role(self):
+        self.client.login(username="member1", password="testpass")
+        response = self.client.get(
+            reverse("signup_role_form", args=[self.assignment.id])
+        )
+        self.assertNotContains(response, "Pathways Path")
+
+    def test_signup_form_shows_pathways_for_speech_role(self):
+        speech = self._speech_assignment()
+        self.client.login(username="member1", password="testpass")
+        response = self.client.get(reverse("signup_role_form", args=[speech.id]))
+        self.assertContains(response, "Pathways Path")
+        self.assertContains(response, "Presentation Mastery")
+
+    def test_claim_with_explicit_remote(self):
+        # The Timer role expects in-person; the member overrides to Remote.
+        self.client.login(username="member1", password="testpass")
+        self.client.post(
+            reverse("toggle_role", args=[self.assignment.id]),
+            {"in_person": "false"},
+        )
+        self.assignment.refresh_from_db()
+        self.assertFalse(self.assignment.in_person)
+
+    def test_claim_with_explicit_in_person(self):
+        # Template expects Remote; member overrides to In Person in the dialog.
+        meeting_type = MeetingType.objects.create(name="Regular")
+        MeetingTypeItem.objects.create(
+            meeting_type=meeting_type, role=self.assignment.role, in_person=False
+        )
+        self.meeting.meeting_type = meeting_type
+        self.meeting.save()
+        self.client.login(username="member1", password="testpass")
+        self.client.post(
+            reverse("toggle_role", args=[self.assignment.id]),
+            {"in_person": "true"},
+        )
+        self.assignment.refresh_from_db()
+        self.assertTrue(self.assignment.in_person)
+
+    def test_claim_saves_notes(self):
+        self.client.login(username="member1", password="testpass")
+        self.client.post(
+            reverse("toggle_role", args=[self.assignment.id]),
+            {"in_person": "true", "notes": "  Timing the speeches  "},
+        )
+        self.assignment.refresh_from_db()
+        self.assertEqual(self.assignment.notes, "Timing the speeches")
+
+    def test_claim_saves_pathways_for_speech_role(self):
+        speech = self._speech_assignment()
+        self.client.login(username="member1", password="testpass")
+        self.client.post(
+            reverse("toggle_role", args=[speech.id]),
+            {
+                "in_person": "true",
+                "notes": "The Power of Pause",
+                "pathways_path": "Presentation Mastery",
+                "pathways_level": "2",
+                "pathways_project": "Effective Body Language",
+            },
+        )
+        speech.refresh_from_db()
+        self.assertEqual(speech.pathways_path, "Presentation Mastery")
+        self.assertEqual(speech.pathways_level, 2)
+        self.assertEqual(speech.pathways_project, "Effective Body Language")
+
+    def test_claim_ignores_pathways_for_non_speech_role(self):
+        self.client.login(username="member1", password="testpass")
+        self.client.post(
+            reverse("toggle_role", args=[self.assignment.id]),
+            {
+                "in_person": "true",
+                "pathways_path": "Engaging Humor",
+                "pathways_level": "3",
+            },
+        )
+        self.assignment.refresh_from_db()
+        self.assertEqual(self.assignment.pathways_path, "")
+        self.assertIsNone(self.assignment.pathways_level)
+
+    def test_drop_clears_notes_and_pathways(self):
+        speech = self._speech_assignment(
+            user=self.user,
+            in_person=True,
+            notes="My Speech",
+            pathways_path="Engaging Humor",
+            pathways_level=1,
+            pathways_project="Hook Your Audience",
+        )
+        self.client.login(username="member1", password="testpass")
+        self.client.post(reverse("toggle_role", args=[speech.id]))
+        speech.refresh_from_db()
+        self.assertIsNone(speech.user)
+        self.assertEqual(speech.notes, "")
+        self.assertEqual(speech.pathways_path, "")
+        self.assertIsNone(speech.pathways_level)
+        self.assertEqual(speech.pathways_project, "")
 
 
 class CheckinKioskViewTest(TestCase):

@@ -22,7 +22,7 @@ AGENDA_TEMPLATE = (
     Path(__file__).parent / "templates" / "meetings" / "agenda" / "agenda_template.docx"
 )
 
-from .models import Meeting, MeetingRole, Attendance
+from .models import Meeting, MeetingRole, MeetingTypeItem, Attendance
 
 User = get_user_model()
 
@@ -247,17 +247,71 @@ def upcoming_meetings(request):
     return render(request, "meetings/upcoming.html", {"meetings": page})
 
 
+def _role_row_response(request, assignment, triggers=None):
+    """Render the role-row partial, optionally attaching HX-Trigger events."""
+    response = render(
+        request, "meetings/partials/role_row.html", {"assignment": assignment}
+    )
+    if triggers:
+        response["HX-Trigger"] = json.dumps(triggers)
+    return response
+
+
+def _template_in_person(assignment):
+    """Default attendance mode for an assignment, read from its template.
+
+    Looks up ``MeetingTypeItem.in_person`` for this assignment's
+    (meeting_type, role). Falls back to True when the meeting has no
+    ``meeting_type`` or no matching template item.
+    """
+    meeting_type_id = assignment.meeting.meeting_type_id
+    if not meeting_type_id:
+        return True
+    mti = MeetingTypeItem.objects.filter(
+        meeting_type_id=meeting_type_id,
+        role=assignment.role,
+    ).first()
+    return mti.in_person if mti else True
+
+
+@login_required
+def signup_role_form(request, role_id):
+    """HTMX endpoint: render the role sign-up dialog for an open role."""
+    assignment = get_object_or_404(MeetingRole, id=role_id)
+    return render(
+        request,
+        "meetings/partials/signup_dialog.html",
+        {
+            "assignment": assignment,
+            "default_in_person": _template_in_person(assignment),
+            "pathways_paths": MeetingRole.PATHWAYS_PATHS,
+            "pathways_levels": MeetingRole.PATHWAYS_LEVELS,
+        },
+    )
+
+
 @login_required
 @require_POST
 def toggle_role(request, role_id):
-    """HTMX endpoint: claim or drop a meeting role. Returns the updated table row partial."""
+    """HTMX endpoint: claim or drop a meeting role. Returns the updated table row partial.
+
+    Claiming is driven by the sign-up dialog (see ``signup_role_form``): the POST
+    carries the member's attendance mode, notes, and — for speech roles — their
+    Pathways path/level/project.
+    """
     assignment = get_object_or_404(MeetingRole, id=role_id)
 
     if assignment.user == request.user:
-        # Drop: user is un-signing from their own role
+        # Drop: user is un-signing from their own role. Clear all
+        # member-entered fields so the slot reopens clean.
         assignment.user = None
         assignment.in_person = None
+        assignment.notes = ""
+        assignment.pathways_path = ""
+        assignment.pathways_level = None
+        assignment.pathways_project = ""
         assignment.save()
+        return _role_row_response(request, assignment)
 
     elif assignment.user is None:
         # Claim: enforce one-role-per-meeting limit
@@ -268,38 +322,54 @@ def toggle_role(request, role_id):
         can_bypass = request.user.is_officer or request.user.is_superuser
 
         if has_existing_role and not can_bypass:
-            response = render(
-                request, "meetings/partials/role_row.html", {"assignment": assignment}
-            )
-            response["HX-Trigger"] = json.dumps(
+            return _role_row_response(
+                request,
+                assignment,
                 {
-                    "showAlert": "You have already signed up for a role for this meeting. Please drop your current role first."
-                }
+                    "showAlert": "You have already signed up for a role for this meeting. Please drop your current role first.",
+                    "closeModal": True,
+                },
             )
-            return response
 
         if request.user.is_guest:
-            response = render(
-                request, "meetings/partials/role_row.html", {"assignment": assignment}
+            return _role_row_response(
+                request,
+                assignment,
+                {
+                    "showAlert": "Guests cannot sign up for a role. Become a member!",
+                    "closeModal": True,
+                },
             )
-            response["HX-Trigger"] = json.dumps(
-                {"showAlert": "Guests cannot sign up for a role. Become a member!"}
-            )
-            return response
 
         assignment.user = request.user
-        # Default to the role's expected mode until the member chooses
-        # explicitly (handled by the future sign-up dialog).
-        assignment.in_person = assignment.role.in_person
+
+        # Attendance mode: the dialog requires it, but fall back to the
+        # meeting-type template's expected mode if the field is somehow missing.
+        in_person = request.POST.get("in_person")
+        if in_person == "true":
+            assignment.in_person = True
+        elif in_person == "false":
+            assignment.in_person = False
+        else:
+            assignment.in_person = _template_in_person(assignment)
+
+        assignment.notes = request.POST.get("notes", "").strip()
+
+        # Pathways details only apply to speech roles.
+        if assignment.role.is_speech_role:
+            assignment.pathways_path = request.POST.get("pathways_path", "").strip()
+            level = request.POST.get("pathways_level", "").strip()
+            assignment.pathways_level = int(level) if level.isdigit() else None
+            assignment.pathways_project = request.POST.get(
+                "pathways_project", ""
+            ).strip()
+
         assignment.save()
+        return _role_row_response(request, assignment, {"closeModal": True})
 
     else:
         # Already taken by someone else
         return HttpResponseForbidden("This role is already taken.")
-
-    return render(
-        request, "meetings/partials/role_row.html", {"assignment": assignment}
-    )
 
 
 @login_required

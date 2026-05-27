@@ -5,6 +5,11 @@ urlpatterns = [
     # Upcoming meetings
     path("meetings/", views.upcoming_meetings, name="upcoming_meetings"),
     # Role signups
+    path(
+        "role/<int:role_id>/signup-form/",
+        views.signup_role_form,
+        name="signup_role_form",
+    ),
     path("role/<int:role_id>/toggle/", views.toggle_role, name="toggle_role"),
     path("role/<int:role_id>/note/", views.save_role_note, name="save_role_note"),
     # Meeting agenda (public)

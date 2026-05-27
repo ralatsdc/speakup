@@ -15,7 +15,6 @@ class Role(models.Model):
     is_speech_role = models.BooleanField(default=False)
     points = models.IntegerField(default=1, help_text="Points for difficulty/effort")
     time_minutes = models.PositiveIntegerField(default=0, help_text="Expected duration in minutes")
-    in_person = models.BooleanField(default=True, help_text="Uncheck for roles that can be done remotely")
 
     def __str__(self):
         return self.name
@@ -72,6 +71,11 @@ class MeetingTypeItem(models.Model):
     role = models.ForeignKey(Role, on_delete=models.CASCADE)
     count = models.PositiveIntegerField(default=1, help_text="How many of this role?")
     default_note = models.TextField(blank=True, help_text="Pre-filled note for this role when a meeting is created.")
+    in_person = models.BooleanField(
+        default=True,
+        help_text="Whether this role is expected to be performed in person at this meeting type. "
+        "Used as the dialog default at sign-up; members can override.",
+    )
     order = models.PositiveIntegerField(default=0, help_text="Order in the agenda")
 
     class Meta:
@@ -115,6 +119,22 @@ class MeetingSession(models.Model):
 class MeetingRole(models.Model):
     """Assigns a User to a Role for a specific Meeting."""
 
+    # The 11 official Toastmasters Pathways learning paths.
+    PATHWAYS_PATHS = [
+        ("Dynamic Leadership", "Dynamic Leadership"),
+        ("Effective Coaching", "Effective Coaching"),
+        ("Engaging Humor", "Engaging Humor"),
+        ("Innovative Planning", "Innovative Planning"),
+        ("Leadership Development", "Leadership Development"),
+        ("Motivational Strategies", "Motivational Strategies"),
+        ("Persuasive Influence", "Persuasive Influence"),
+        ("Presentation Mastery", "Presentation Mastery"),
+        ("Strategic Relationships", "Strategic Relationships"),
+        ("Team Collaboration", "Team Collaboration"),
+        ("Visionary Communication", "Visionary Communication"),
+    ]
+    PATHWAYS_LEVELS = [(level, str(level)) for level in range(1, 6)]
+
     meeting = models.ForeignKey(Meeting, on_delete=models.CASCADE, related_name="roles")
     role = models.ForeignKey(Role, on_delete=models.PROTECT)
     session = models.ForeignKey(Session, on_delete=models.SET_NULL, null=True, blank=True)
@@ -135,6 +155,24 @@ class MeetingRole(models.Model):
     time_minutes = models.PositiveIntegerField(default=0, help_text="Expected duration in minutes")
     notes = models.TextField(blank=True, help_text="Speech title, project details, or feedback.")
     admin_notes = models.TextField(blank=True, help_text="Private feedback or details for the follow-up email.")
+
+    pathways_path = models.CharField(
+        max_length=50,
+        blank=True,
+        choices=PATHWAYS_PATHS,
+        help_text="Toastmasters Pathways path the member is working (speech roles).",
+    )
+    pathways_level = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        choices=PATHWAYS_LEVELS,
+        help_text="Pathways level 1–5.",
+    )
+    pathways_project = models.CharField(
+        max_length=200,
+        blank=True,
+        help_text="Pathways project name for this speech.",
+    )
 
     sort_order = models.PositiveIntegerField(default=0)
 

@@ -27,9 +27,9 @@
                 {% else %}
                     {% if user.is_authenticated %}
                         <button class="btn btn-sm btn-primary"
-                                hx-post="{% url 'toggle_role' assignment.id %}"
-                                hx-target="#role-row-{{ assignment.id }}"
-                                hx-swap="outerHTML">Sign Up</button>
+                                data-bs-toggle="modal" data-bs-target="#signupModal"
+                                hx-get="{% url 'signup_role_form' assignment.id %}"
+                                hx-target="#signupModalContent">Sign Up</button>
                     {% else %}
                         <span class="text-muted fst-italic">-- Open --</span>
                     {% endif %}
