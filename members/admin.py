@@ -9,12 +9,19 @@ DEFAULT_PASSWORD = "Speak-Up-2026"
 
 
 class CustomUserCreationForm(UserCreationForm):
+    class Meta(UserCreationForm.Meta):
+        model = User
+        fields = UserCreationForm.Meta.fields + ("email",)
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.initial["password1"] = DEFAULT_PASSWORD
         self.initial["password2"] = DEFAULT_PASSWORD
         self.fields["password1"].widget.render_value = True
         self.fields["password2"].widget.render_value = True
+        # Email is unique at the DB level — make the admin form require it
+        # explicitly so the error is friendly, not an IntegrityError.
+        self.fields["email"].required = True
 
 
 @admin.action(description="Make Guest")
@@ -74,7 +81,7 @@ class CustomUserAdmin(ImportExportModelAdmin, UserAdmin):
             None,
             {
                 "classes": ("wide",),
-                "fields": ("username", "password1", "password2"),
+                "fields": ("username", "email", "password1", "password2"),
             },
         ),
     )

@@ -28,24 +28,24 @@ class NavbarKioskLinkTest(TestCase):
 
     def test_link_hidden_for_regular_member(self):
         self._create("member1")
-        self.client.login(username="member1", password="testpass")
+        self.client.login(username="member1", email="member1@example.com", password="testpass")
         response = self._get_landing()
         self.assertNotContains(response, self.LINK_HREF_FRAGMENT)
 
     def test_link_hidden_for_guest(self):
         self._create("guest1", is_guest=True)
-        self.client.login(username="guest1", password="testpass")
+        self.client.login(username="guest1", email="guest1@example.com", password="testpass")
         response = self._get_landing()
         self.assertNotContains(response, self.LINK_HREF_FRAGMENT)
 
     def test_link_visible_to_officer(self):
         self._create("officer1", is_officer=True)
-        self.client.login(username="officer1", password="testpass")
+        self.client.login(username="officer1", email="officer1@example.com", password="testpass")
         response = self._get_landing()
         self.assertContains(response, self.LINK_HREF_FRAGMENT)
 
     def test_link_visible_to_superuser(self):
         self._create("root", is_superuser=True)
-        self.client.login(username="root", password="testpass")
+        self.client.login(username="root", email="root@example.com", password="testpass")
         response = self._get_landing()
         self.assertContains(response, self.LINK_HREF_FRAGMENT)

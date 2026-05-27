@@ -1,29 +1,67 @@
 from django.contrib.auth.models import Group
+from django.db import IntegrityError
 from django.test import TestCase
 
-from .admin import make_officer, remove_officer
+from .admin import CustomUserCreationForm, make_officer, remove_officer
 from .models import User
 from .signals import OFFICERS_GROUP_NAME
 
 
 class UserModelTest(TestCase):
     def test_status_label_member(self):
-        user = User.objects.create_user(username="member", password="pass")
+        user = User.objects.create_user(username="member", email="member@example.com", password="pass")
         self.assertEqual(user.status_label, "Member")
 
     def test_status_label_guest(self):
-        user = User.objects.create_user(username="guest", password="pass", is_guest=True)
+        user = User.objects.create_user(username="guest", email="guest@example.com", password="pass", is_guest=True)
         self.assertEqual(user.status_label, "Guest")
 
     def test_str_with_first_name(self):
         user = User.objects.create_user(
-            username="jdoe", password="pass", first_name="John"
+            username="jdoe", email="jdoe@example.com", password="pass", first_name="John"
         )
         self.assertEqual(str(user), "John")
 
     def test_str_without_first_name(self):
-        user = User.objects.create_user(username="jdoe", password="pass")
+        user = User.objects.create_user(username="jdoe", email="jdoe@example.com", password="pass")
         self.assertEqual(str(user), "jdoe")
+
+
+class EmailUniquenessTest(TestCase):
+    """Email is unique and lowercased on save."""
+
+    def test_save_lowercases_email(self):
+        user = User.objects.create_user(
+            username="alice", password="pass", email="Alice@Example.COM"
+        )
+        user.refresh_from_db()
+        self.assertEqual(user.email, "alice@example.com")
+
+    def test_duplicate_email_raises_integrity_error(self):
+        User.objects.create_user(
+            username="alice", password="pass", email="alice@example.com"
+        )
+        with self.assertRaises(IntegrityError):
+            User.objects.create_user(
+                username="bob", password="pass", email="alice@example.com"
+            )
+
+    def test_case_difference_duplicate_is_caught(self):
+        # Save lowercases the email, so a "different" case attempt collides.
+        User.objects.create_user(
+            username="alice", password="pass", email="alice@example.com"
+        )
+        with self.assertRaises(IntegrityError):
+            User.objects.create_user(
+                username="bob", password="pass", email="ALICE@example.com"
+            )
+
+    def test_admin_add_form_requires_email(self):
+        form = CustomUserCreationForm(
+            data={"username": "newuser", "password1": "x", "password2": "x"}
+        )
+        self.assertFalse(form.is_valid())
+        self.assertIn("email", form.errors)
 
 
 class OfficersGroupSeededTest(TestCase):
@@ -59,7 +97,7 @@ class OfficerSyncTest(TestCase):
     superusers."""
 
     def test_become_officer_grants_is_staff_and_group(self):
-        user = User.objects.create_user(username="alice", password="pass")
+        user = User.objects.create_user(username="alice", email="alice@example.com", password="pass")
         self.assertFalse(user.is_staff)
         self.assertFalse(user.groups.filter(name=OFFICERS_GROUP_NAME).exists())
 
@@ -72,7 +110,7 @@ class OfficerSyncTest(TestCase):
 
     def test_un_officer_removes_is_staff_and_group(self):
         user = User.objects.create_user(
-            username="bob", password="pass", is_officer=True
+            username="bob", email="bob@example.com", password="pass", is_officer=True
         )
         user.refresh_from_db()
         self.assertTrue(user.is_staff)
@@ -87,7 +125,7 @@ class OfficerSyncTest(TestCase):
     def test_un_officer_preserves_is_staff_for_superuser(self):
         # Superusers always need is_staff, regardless of officer status.
         user = User.objects.create_user(
-            username="root", password="pass",
+            username="root", email="root@example.com", password="pass",
             is_officer=True, is_superuser=True,
         )
         user.is_officer = False
@@ -99,7 +137,7 @@ class OfficerSyncTest(TestCase):
 
     def test_creating_with_is_officer_true_grants_everything(self):
         user = User.objects.create_user(
-            username="carol", password="pass", is_officer=True
+            username="carol", email="carol@example.com", password="pass", is_officer=True
         )
         user.refresh_from_db()
         self.assertTrue(user.is_staff)
@@ -118,8 +156,8 @@ class OfficerBulkAdminActionTest(TestCase):
     signal — they iterate + save() rather than queryset.update()."""
 
     def test_make_officer_bulk_action_grants_is_staff_and_group(self):
-        u1 = User.objects.create_user(username="u1", password="pass")
-        u2 = User.objects.create_user(username="u2", password="pass")
+        u1 = User.objects.create_user(username="u1", email="u1@example.com", password="pass")
+        u2 = User.objects.create_user(username="u2", email="u2@example.com", password="pass")
 
         make_officer(
             _DummyModelAdmin(), None,
@@ -134,10 +172,10 @@ class OfficerBulkAdminActionTest(TestCase):
 
     def test_remove_officer_bulk_action_reverses_is_staff_and_group(self):
         u1 = User.objects.create_user(
-            username="u1", password="pass", is_officer=True
+            username="u1", email="u1@example.com", password="pass", is_officer=True
         )
         u2 = User.objects.create_user(
-            username="u2", password="pass", is_officer=True
+            username="u2", email="u2@example.com", password="pass", is_officer=True
         )
 
         remove_officer(
