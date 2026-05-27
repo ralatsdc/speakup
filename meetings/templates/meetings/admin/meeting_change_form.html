@@ -5,14 +5,38 @@
     {# IDs that meetings/admin/evaluator_pairing.js reads to live-toggle the #}
     {# `evaluates` field row on the MeetingRole inline. #}
     {{ evaluator_role_ids|json_script:"evaluator-role-ids" }}
+    {# IDs that meetings/admin/pathways_visibility.js reads to live-toggle #}
+    {# the Pathways fields (path / level / project) on the MeetingRole inline. #}
+    {{ pathways_role_ids|json_script:"pathways-role-ids" }}
+{% endblock %}
+
+{% block field_sets %}
+    {# Identity banner: read-only summary of the meeting. Shown only when #}
+    {# editing an existing meeting (original is None on the add form). #}
+    {% if original %}
+    <div class="meeting-admin-banner">
+        <div class="meeting-admin-banner-date">
+            {{ original.date|date:"l, F j, Y" }}
+        </div>
+        <div class="meeting-admin-banner-meta">
+            {{ original.date|time:"g:i A" }}{% if original.meeting_type %}
+            &middot; {{ original.meeting_type }}{% endif %}{% if original.theme %}
+            &middot; Theme: {{ original.theme }}{% endif %}
+        </div>
+    </div>
+    {% endif %}
+    {{ block.super }}
 {% endblock %}
 
 {% block submit_buttons_bottom %}
+    {# Wrap both submit-rows in one sticky container so they pin to the #}
+    {# bottom of the viewport together (see meeting_change_form.css). #}
+    <div class="meeting-admin-submit-sticky">
     {{ block.super }}
     <div class="submit-row">
         <!-- Button 1: Pre-Meeting Reminders -->
         <input type="submit" value="Send Email Reminders" name="_send-reminders" class="default" style="background-color: #e11d48; margin-right: 10px;">
-        
+
         <!-- Button 2: Post-Meeting Feedback -->
         <input type="submit" value="Send Feedback Emails" name="_send-feedback" class="default" style="background-color: #10b981;">
 
@@ -26,5 +50,6 @@
             <strong>Green:</strong> Send 'Admin Notes' to specific members AFTER the meeting.
             {% if zoom_registration_enabled %}<br><strong>Blue:</strong> Import Zoom registrants as attendance records.{% endif %}
         </p>
+    </div>
     </div>
 {% endblock %}

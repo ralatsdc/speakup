@@ -2,6 +2,7 @@ from django import forms
 from django.conf import settings
 from django.contrib import admin, messages
 from django.db import models
+from django.db.models import OuterRef, Subquery
 from django.http import HttpResponseRedirect
 from django.urls import path
 
@@ -13,13 +14,13 @@ from .utils import send_meeting_reminders
 class RoleAdmin(admin.ModelAdmin):
     list_display = (
         "name",
-        "is_speech_role",
+        "shows_pathways_fields",
         "is_evaluator_role",
         "is_evaluated_role",
         "points",
         "time_minutes",
     )
-    list_filter = ("is_speech_role", "is_evaluator_role", "is_evaluated_role")
+    list_filter = ("shows_pathways_fields", "is_evaluator_role", "is_evaluated_role")
 
 
 @admin.register(Session)
@@ -56,6 +57,11 @@ class MeetingTypeAdmin(admin.ModelAdmin):
 class MeetingSessionInline(admin.TabularInline):
     model = MeetingSession
     extra = 0
+    # Sessions are copied from the MeetingType template at creation and
+    # almost never change per-meeting. Collapse the whole inline so it
+    # doesn't take page space until an officer explicitly needs to edit
+    # it.
+    classes = ("collapse",)
     formfield_overrides = {
         models.TextField: {"widget": forms.Textarea(attrs={"rows": 2, "cols": 30})},
     }
@@ -66,17 +72,30 @@ class MeetingRoleInline(admin.StackedInline):
     fk_name = "meeting"
     extra = 0
     autocomplete_fields = ["user"]
+    # Custom inline template inserts a section header before each new
+    # session group (see meetings/templates/admin/edit_inline/
+    # meetings_meetingrole_stacked.html).
+    template = "admin/edit_inline/meetings_meetingrole_stacked.html"
     # Stacked layout per MeetingRole: dropdowns cluster on row 1, evaluates
-    # sits on its own row directly below them, then numeric/notes rows.
+    # sits on its own row directly below them, then numeric. Notes +
+    # admin_notes live in a separate collapsed fieldset so they don't
+    # take vertical space until clicked open.
     fieldsets = (
         (None, {
             "fields": (
                 ("session", "role", "user", "in_person"),
                 "evaluates",
-                ("time_minutes", "sort_order"),
-                "notes",
-                "admin_notes",
+                ("pathways_path", "pathways_level", "pathways_project"),
+                "time_minutes",
+                # sort_order is hidden by inline_drag_sort.css — drag-to-
+                # reorder writes to it via JS. Kept in the fieldset so the
+                # form submits the updated value.
+                "sort_order",
             ),
+        }),
+        ("Notes", {
+            "classes": ("collapse",),
+            "fields": ("notes", "admin_notes"),
         }),
     )
     formfield_overrides = {
@@ -84,13 +103,54 @@ class MeetingRoleInline(admin.StackedInline):
     }
 
     class Media:
-        # Live-toggles the `evaluates` row visibility as the role <select>
-        # changes. The server-side MeetingRole.clean() still enforces the
-        # rule, so JS-disabled clients degrade safely (evaluates may be
-        # visible on non-evaluator rows but a save will reject invalid
-        # values).
-        css = {"all": ("meetings/admin/evaluator_pairing.css",)}
-        js = ("meetings/admin/evaluator_pairing.js",)
+        # Live-toggles for `evaluates` (only on evaluator roles) and the
+        # three Pathways fields (only on speech roles); collapsible row
+        # headers; styling for session-group headers inserted by the
+        # custom inline template. Toggles are visual only; server-side
+        # MeetingRole.clean() / model validation still enforce the rules,
+        # so JS-disabled clients degrade safely.
+        css = {
+            "all": (
+                "meetings/admin/evaluator_pairing.css",
+                "meetings/admin/pathways_visibility.css",
+                "meetings/admin/session_grouping.css",
+                "meetings/admin/row_collapse.css",
+                "meetings/admin/inline_filter.css",
+                "meetings/admin/inline_drag_sort.css",
+            )
+        }
+        js = (
+            "meetings/admin/evaluator_pairing.js",
+            "meetings/admin/pathways_visibility.js",
+            "meetings/admin/row_collapse.js",
+            "meetings/admin/inline_filter.js",
+            # SortableJS via CDN (Django Media supports absolute URLs).
+            # Loaded before inline_drag_sort.js, which depends on the
+            # `Sortable` global.
+            "https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js",
+            "meetings/admin/inline_drag_sort.js",
+        )
+
+    def get_queryset(self, request):
+        # Order rows so they cluster under their session header on the
+        # change form. Per-meeting session order lives on MeetingSession;
+        # MeetingRole.session points at the reusable Session, so subquery
+        # for the matching MeetingSession.sort_order. Null/missing
+        # sessions sort first (templates can put them under a "no
+        # session" header).
+        return (
+            super()
+            .get_queryset(request)
+            .annotate(
+                _session_order=Subquery(
+                    MeetingSession.objects.filter(
+                        meeting=OuterRef("meeting"),
+                        session=OuterRef("session"),
+                    ).values("sort_order")[:1]
+                )
+            )
+            .order_by("_session_order", "sort_order", "id")
+        )
 
     def formfield_for_foreignkey(self, db_field, request, **kwargs):
         if db_field.name == "evaluates":
@@ -114,6 +174,26 @@ class MeetingAdmin(admin.ModelAdmin):
     list_display = ("date", "meeting_type", "theme", "role_count_status")
     inlines = [MeetingSessionInline, MeetingRoleInline]
     change_form_template = "meetings/admin/meeting_change_form.html"
+    # Word of the day is the only field that changes regularly after a
+    # meeting is created from its template; everything else (date,
+    # meeting_type, theme, zoom_link) is set once and rarely touched.
+    # Surface word_of_the_day on its own, tuck the rest behind a
+    # collapsed section.
+    fieldsets = (
+        (None, {
+            "fields": ("word_of_the_day",),
+        }),
+        ("Meeting details", {
+            "classes": ("collapse",),
+            "fields": ("meeting_type", "date", "theme", "zoom_link"),
+        }),
+    )
+
+    class Media:
+        # Tightens inline row density and pins the submit area to the
+        # bottom of the viewport so officers don't scroll past 20 inline
+        # rows to save or run an action.
+        css = {"all": ("meetings/admin/meeting_change_form.css",)}
 
     def role_count_status(self, obj):
         filled = obj.roles.filter(user__isnull=False).count()
@@ -241,6 +321,10 @@ class MeetingAdmin(admin.ModelAdmin):
         # IDs the inline JS uses to live-toggle the evaluates field row.
         extra_context["evaluator_role_ids"] = list(
             Role.objects.filter(is_evaluator_role=True).values_list("id", flat=True)
+        )
+        # IDs the inline JS uses to live-toggle the Pathways fields.
+        extra_context["pathways_role_ids"] = list(
+            Role.objects.filter(shows_pathways_fields=True).values_list("id", flat=True)
         )
         return super().change_view(
             request, object_id, form_url=form_url, extra_context=extra_context

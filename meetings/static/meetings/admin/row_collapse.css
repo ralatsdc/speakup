@@ -1,0 +1,53 @@
+/* Collapsible MeetingRole rows: JS toggles .is-collapsed on .inline-related.
+   Collapsed rows show only the <h3> summary; clicking the header toggles. */
+.inline-related h3 {
+    cursor: pointer;
+    user-select: none;
+}
+/* Disclosure caret in the header, pointing down when expanded, right when
+   collapsed. Doesn't apply to the empty template row or session headers. */
+.inline-related h3 .inline_label::before {
+    content: "\25BE\00A0";  /* ▾ */
+    color: #79aec8;
+    font-size: 0.9em;
+}
+.inline-related.is-collapsed h3 .inline_label::before {
+    content: "\25B8\00A0";  /* ▸ */
+}
+/* Collapse hides everything in the row except its <h3>. PK/FK hidden
+   inputs stay in the DOM so the form still submits correctly. */
+.inline-related.is-collapsed > *:not(h3) {
+    display: none;
+}
+
+/* Empty template row stays clickable-by-stock-CSS hidden; suppress our
+   caret + cursor on it so cloned new rows don't inherit them via class. */
+.inline-related.empty-form h3,
+.inline-related.empty-form h3 .inline_label::before {
+    cursor: default;
+}
+.inline-related.empty-form h3 .inline_label::before {
+    content: none;
+}
+
+/* Compact status chips in the collapsed header. */
+.inline-related h3 .mr-mode {
+    display: inline-block;
+    padding: 0 0.5em;
+    border-radius: 0.75em;
+    font-size: 0.8em;
+    font-weight: 600;
+    vertical-align: middle;
+}
+.inline-related h3 .mr-mode-in-person {
+    background-color: #198754;
+    color: #fff;
+}
+.inline-related h3 .mr-mode-remote {
+    background-color: #6c757d;
+    color: #fff;
+}
+.inline-related h3 .mr-open {
+    color: #888;
+    font-style: italic;
+}

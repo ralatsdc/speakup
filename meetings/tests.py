@@ -14,7 +14,7 @@ class MeetingSignalTest(TestCase):
     """Test that creating a Meeting auto-populates roles from its MeetingType."""
 
     def setUp(self):
-        self.role_speaker = Role.objects.create(name="Speaker", is_speech_role=True)
+        self.role_speaker = Role.objects.create(name="Speaker", shows_pathways_fields=True)
         self.role_timer = Role.objects.create(name="Timer")
         self.meeting_type = MeetingType.objects.create(name="Regular")
         MeetingTypeItem.objects.create(
@@ -145,7 +145,7 @@ class ToggleRoleViewTest(TestCase):
 
     def _speech_assignment(self, **kwargs):
         """Create an open MeetingRole for a speech role on the test meeting."""
-        speech_role = Role.objects.create(name="Speaker", is_speech_role=True)
+        speech_role = Role.objects.create(name="Speaker", shows_pathways_fields=True)
         return MeetingRole.objects.create(
             meeting=self.meeting, role=speech_role, sort_order=1, **kwargs
         )
@@ -342,7 +342,7 @@ class ConvertGuestServiceTest(TestCase):
 
 class EmailUtilsTest(TestCase):
     def setUp(self):
-        self.role = Role.objects.create(name="Speaker", is_speech_role=True)
+        self.role = Role.objects.create(name="Speaker", shows_pathways_fields=True)
         self.meeting = Meeting.objects.create(
             date=timezone.now(), theme="Leadership"
         )
@@ -596,11 +596,11 @@ class EvaluatorPairingTest(TestCase):
 
     def setUp(self):
         self.speaker_role = Role.objects.create(
-            name="Speaker", is_speech_role=True, is_evaluated_role=True
+            name="Speaker", shows_pathways_fields=True, is_evaluated_role=True
         )
         self.eval_role = Role.objects.create(
             name="Evaluator (Speech)",
-            is_speech_role=True,
+            shows_pathways_fields=True,
             is_evaluator_role=True,
         )
         self.timer_role = Role.objects.create(name="Timer")
@@ -673,6 +673,206 @@ class EvaluatorPairingTest(TestCase):
         self.assertTrue(self.speaker_role.is_evaluated_role)
         self.assertFalse(self.eval_role.is_evaluated_role)
         self.assertFalse(self.timer_role.is_evaluated_role)
+
+    def test_change_view_groups_rows_by_session_with_headers(self):
+        # Two sessions, two roles each; rows should cluster under their
+        # session-name header in MeetingSession.sort_order order.
+        from .models import MeetingSession, Session
+        prepared = Session.objects.create(name="Prepared Speeches")
+        table_topics = Session.objects.create(name="Table Topics")
+        # MeetingSession sort_order on this meeting puts Table Topics
+        # first, then Prepared Speeches — so the inline should reflect
+        # that, not alphabetical or model-default order.
+        MeetingSession.objects.create(
+            meeting=self.meeting, session=table_topics, sort_order=1
+        )
+        MeetingSession.objects.create(
+            meeting=self.meeting, session=prepared, sort_order=2
+        )
+        # Bind sessions to two more roles; speaker/evaluator from setUp
+        # don't have a session yet.
+        self.speaker.session = prepared
+        self.speaker.save()
+        self.evaluator.session = prepared
+        self.evaluator.save()
+        topicmaster = Role.objects.create(name="Topicmaster")
+        MeetingRole.objects.create(
+            meeting=self.meeting, role=topicmaster, session=table_topics, sort_order=0
+        )
+
+        admin_user = User.objects.create_user(
+            username="root2", email="root2@example.com",
+            password="pass", is_staff=True, is_superuser=True,
+        )
+        self.client.login(username="root2", password="pass")
+        response = self.client.get(
+            reverse("admin:meetings_meeting_change", args=[self.meeting.pk])
+        )
+        self.assertEqual(response.status_code, 200)
+        # Both headers should render.
+        self.assertContains(response, "meeting-role-session-header")
+        self.assertContains(response, "Table Topics")
+        self.assertContains(response, "Prepared Speeches")
+        # Table Topics group precedes Prepared Speeches (per MeetingSession
+        # sort_order), not the other way around.
+        content = response.content.decode()
+        self.assertLess(content.index("Table Topics"), content.index("Prepared Speeches"))
+
+    def test_change_view_exposes_pathways_role_ids_for_toggle(self):
+        # The inline JS reads pathways role IDs from a json_script element to
+        # live-toggle the Pathways fields.
+        admin_user = User.objects.create_user(
+            username="root5", email="root5@example.com",
+            password="pass", is_staff=True, is_superuser=True,
+        )
+        self.client.login(username="root5", password="pass")
+        response = self.client.get(
+            reverse("admin:meetings_meeting_change", args=[self.meeting.pk])
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'id="pathways-role-ids"')
+        # Speaker shows_pathways_fields=True in setUp, so its pk should be in
+        # the rendered JSON.
+        self.assertContains(response, str(self.speaker_role.pk))
+        self.assertContains(response, "pathways_visibility.css")
+        self.assertContains(response, "pathways_visibility.js")
+
+    def test_change_view_has_identity_banner_and_collapsed_sections(self):
+        # The change form renders the read-only meeting banner, a
+        # "Meeting details" fieldset (collapsed), and the MeetingSession
+        # inline is also collapsed.
+        from meetings.models import MeetingType
+        meeting_type = MeetingType.objects.create(name="Regular")
+        self.meeting.meeting_type = meeting_type
+        self.meeting.theme = "Conviction"
+        self.meeting.save()
+
+        admin_user = User.objects.create_user(
+            username="root9", email="root9@example.com",
+            password="pass", is_staff=True, is_superuser=True,
+        )
+        self.client.login(username="root9", password="pass")
+        response = self.client.get(
+            reverse("admin:meetings_meeting_change", args=[self.meeting.pk])
+        )
+        self.assertEqual(response.status_code, 200)
+        # Banner renders the meeting identity (date + type + theme).
+        self.assertContains(response, "meeting-admin-banner")
+        self.assertContains(response, "Regular")
+        self.assertContains(response, "Conviction")
+        # "Meeting details" fieldset is present (per MeetingAdmin.fieldsets).
+        self.assertContains(response, "Meeting details")
+        # MeetingSession inline rendered with classes=("collapse",); the
+        # inline-group div carries the formset prefix in its id.
+        self.assertContains(response, 'id="meeting_sessions-group"')
+
+    def test_change_view_has_drag_sort_markup_and_assets(self):
+        # Drag handle on each row, data-session-id on session headers, and
+        # the SortableJS + custom drag-sort assets are referenced.
+        from .models import MeetingSession, Session
+        # Give the existing speaker a session so a header renders with a
+        # data-session-id.
+        prepared = Session.objects.create(name="Prepared Speeches")
+        MeetingSession.objects.create(
+            meeting=self.meeting, session=prepared, sort_order=1
+        )
+        self.speaker.session = prepared
+        self.speaker.save()
+
+        admin_user = User.objects.create_user(
+            username="root8", email="root8@example.com",
+            password="pass", is_staff=True, is_superuser=True,
+        )
+        self.client.login(username="root8", password="pass")
+        response = self.client.get(
+            reverse("admin:meetings_meeting_change", args=[self.meeting.pk])
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "meetingrole-drag-handle")
+        self.assertContains(
+            response,
+            'data-session-id="{}"'.format(prepared.id),
+        )
+        self.assertContains(response, "inline_drag_sort.css")
+        self.assertContains(response, "inline_drag_sort.js")
+        self.assertContains(response, "Sortable.min.js")
+
+    def test_change_view_renders_meeting_role_filter_input(self):
+        # The MeetingRole inline gets a live-filter input at the top; the
+        # rendered template carries the input plus the supporting static refs.
+        admin_user = User.objects.create_user(
+            username="root7", email="root7@example.com",
+            password="pass", is_staff=True, is_superuser=True,
+        )
+        self.client.login(username="root7", password="pass")
+        response = self.client.get(
+            reverse("admin:meetings_meeting_change", args=[self.meeting.pk])
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'id="meetingrole-filter"')
+        self.assertContains(response, "meetingrole-filter-bar")
+        self.assertContains(response, "inline_filter.css")
+        self.assertContains(response, "inline_filter.js")
+
+    def test_change_view_has_sticky_submit_wrapper_and_layout_css(self):
+        # The custom change_form template wraps the submit area in a
+        # sticky container; the MeetingAdmin Media references the
+        # density + sticky-save CSS file.
+        admin_user = User.objects.create_user(
+            username="root6", email="root6@example.com",
+            password="pass", is_staff=True, is_superuser=True,
+        )
+        self.client.login(username="root6", password="pass")
+        response = self.client.get(
+            reverse("admin:meetings_meeting_change", args=[self.meeting.pk])
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "meeting-admin-submit-sticky")
+        self.assertContains(response, "meeting_change_form.css")
+
+    def test_change_view_notes_fieldset_is_collapsed_by_default(self):
+        # The notes / admin_notes fieldset uses Django's `collapse` class
+        # so the textareas stay hidden until the officer expands them.
+        admin_user = User.objects.create_user(
+            username="root4", email="root4@example.com",
+            password="pass", is_staff=True, is_superuser=True,
+        )
+        self.client.login(username="root4", password="pass")
+        response = self.client.get(
+            reverse("admin:meetings_meeting_change", args=[self.meeting.pk])
+        )
+        self.assertEqual(response.status_code, 200)
+        # Stock admin emits `class="... collapse"` on the fieldset and a
+        # summary/heading containing the fieldset name. Spot-check both.
+        self.assertContains(response, "collapse")
+        self.assertContains(response, "Notes")
+
+    def test_change_view_rows_default_collapsed_with_summary(self):
+        # Existing rows render with .is-collapsed; new template row does not.
+        # Header shows a compact summary (role name, user, mode badge) rather
+        # than MeetingRole's __str__.
+        user = User.objects.create_user(
+            username="alice", email="alice@example.com",
+            password="pass", first_name="Alice", last_name="Smith",
+        )
+        self.speaker.user = user
+        self.speaker.in_person = True
+        self.speaker.save()
+        admin_user = User.objects.create_user(
+            username="root3", email="root3@example.com",
+            password="pass", is_staff=True, is_superuser=True,
+        )
+        self.client.login(username="root3", password="pass")
+        response = self.client.get(
+            reverse("admin:meetings_meeting_change", args=[self.meeting.pk])
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "is-collapsed")
+        self.assertContains(response, "row_collapse.css")
+        self.assertContains(response, "row_collapse.js")
+        # Compact summary, not the verbose __str__.
+        self.assertContains(response, "Alice Smith")
+        self.assertContains(response, "mr-mode-in-person")
 
     def test_change_view_exposes_evaluator_role_ids_for_inline_js(self):
         # The inline JS reads evaluator role IDs from a json_script element

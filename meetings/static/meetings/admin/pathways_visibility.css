@@ -1,0 +1,9 @@
+/* Hide the Pathways field row on every MeetingRole inline by default;
+   the accompanying JS adds .is-pathways-row to .inline-related when the
+   selected role is flagged is_speech_role, which reveals the row. */
+.inline-related .form-row.field-pathways_path {
+    display: none;
+}
+.inline-related.is-pathways-row .form-row.field-pathways_path {
+    display: block;
+}
