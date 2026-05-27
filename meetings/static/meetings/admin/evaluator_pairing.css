@@ -1,0 +1,10 @@
+/* Hide the `evaluates` row by default on every MeetingRole inline. The
+   accompanying JS toggles the `is-evaluator-row` class on .inline-related
+   based on the currently-selected role, revealing the field only when
+   that role is flagged is_evaluator_role. */
+.inline-related .form-row.field-evaluates {
+    display: none;
+}
+.inline-related.is-evaluator-row .form-row.field-evaluates {
+    display: block;
+}

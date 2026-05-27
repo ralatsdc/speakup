@@ -11,7 +11,15 @@ from .utils import send_meeting_reminders
 
 @admin.register(Role)
 class RoleAdmin(admin.ModelAdmin):
-    list_display = ("name", "is_speech_role", "points", "time_minutes")
+    list_display = (
+        "name",
+        "is_speech_role",
+        "is_evaluator_role",
+        "is_evaluated_role",
+        "points",
+        "time_minutes",
+    )
+    list_filter = ("is_speech_role", "is_evaluator_role", "is_evaluated_role")
 
 
 @admin.register(Session)
@@ -53,23 +61,52 @@ class MeetingSessionInline(admin.TabularInline):
     }
 
 
-class MeetingRoleInline(admin.TabularInline):
+class MeetingRoleInline(admin.StackedInline):
     model = MeetingRole
+    fk_name = "meeting"
     extra = 0
     autocomplete_fields = ["user"]
-    fields = ("session", "role", "user", "in_person", "time_minutes", "notes", "admin_notes", "sort_order")
+    # Stacked layout per MeetingRole: dropdowns cluster on row 1, evaluates
+    # sits on its own row directly below them, then numeric/notes rows.
+    fieldsets = (
+        (None, {
+            "fields": (
+                ("session", "role", "user", "in_person"),
+                "evaluates",
+                ("time_minutes", "sort_order"),
+                "notes",
+                "admin_notes",
+            ),
+        }),
+    )
     formfield_overrides = {
-        models.TextField: {"widget": forms.Textarea(attrs={"rows": 2, "cols": 30})},
-        models.PositiveIntegerField: {"widget": forms.NumberInput(attrs={"style": "width: 5em;"})},
+        models.TextField: {"widget": forms.Textarea(attrs={"rows": 2, "cols": 60})},
     }
 
+    class Media:
+        # Live-toggles the `evaluates` row visibility as the role <select>
+        # changes. The server-side MeetingRole.clean() still enforces the
+        # rule, so JS-disabled clients degrade safely (evaluates may be
+        # visible on non-evaluator rows but a save will reject invalid
+        # values).
+        css = {"all": ("meetings/admin/evaluator_pairing.css",)}
+        js = ("meetings/admin/evaluator_pairing.js",)
+
     def formfield_for_foreignkey(self, db_field, request, **kwargs):
-        formfield = super().formfield_for_foreignkey(db_field, request, **kwargs)
-        if db_field.name in ("session", "role"):
-            formfield.widget.attrs["style"] = "width: 10em;"
-        if db_field.name == "user":
-            formfield.widget.attrs["style"] = "width: 10em;"
-        return formfield
+        if db_field.name == "evaluates":
+            # Limit the picker to MeetingRoles on the parent meeting whose
+            # role is flagged as evaluated (Speaker, Ranter, …). The parent
+            # meeting's PK is in the admin URL.
+            parent_id = request.resolver_match.kwargs.get("object_id")
+            if parent_id:
+                kwargs["queryset"] = (
+                    MeetingRole.objects
+                    .filter(meeting_id=parent_id, role__is_evaluated_role=True)
+                    .select_related("role", "user")
+                )
+            else:
+                kwargs["queryset"] = MeetingRole.objects.none()
+        return super().formfield_for_foreignkey(db_field, request, **kwargs)
 
 
 @admin.register(Meeting)
@@ -198,9 +235,13 @@ class MeetingAdmin(admin.ModelAdmin):
         return super().response_change(request, obj)
 
     def change_view(self, request, object_id, form_url="", extra_context=None):
-        """Expose the Zoom-registration feature flag to the change-form template."""
+        """Expose flags + JS-needed data to the change-form template."""
         extra_context = extra_context or {}
         extra_context["zoom_registration_enabled"] = settings.ZOOM_REGISTRATION_ENABLED
+        # IDs the inline JS uses to live-toggle the evaluates field row.
+        extra_context["evaluator_role_ids"] = list(
+            Role.objects.filter(is_evaluator_role=True).values_list("id", flat=True)
+        )
         return super().change_view(
             request, object_id, form_url=form_url, extra_context=extra_context
         )
@@ -208,9 +249,19 @@ class MeetingAdmin(admin.ModelAdmin):
 
 @admin.register(MeetingRole)
 class MeetingRoleAdmin(admin.ModelAdmin):
-    list_display = ("meeting", "role", "user", "in_person", "sort_order")
-    list_filter = ("meeting", "role", "in_person")
+    list_display = ("meeting", "role", "user", "in_person", "evaluates", "sort_order")
+    list_filter = (
+        "meeting",
+        "role",
+        "in_person",
+        "role__is_evaluator_role",
+        "role__is_evaluated_role",
+    )
     list_editable = ("user", "sort_order")
+    # The evaluates picker would list every MeetingRole otherwise; raw_id_fields
+    # gives a popup search instead. Editing in the Meeting-scoped inline is
+    # the primary workflow; this is just to keep the standalone admin sane.
+    raw_id_fields = ("evaluates",)
 
 
 @admin.register(Attendance)

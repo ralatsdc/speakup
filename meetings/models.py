@@ -2,6 +2,7 @@ import logging
 
 from django.db import models
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 
@@ -13,6 +14,17 @@ class Role(models.Model):
 
     name = models.CharField(max_length=100)
     is_speech_role = models.BooleanField(default=False)
+    is_evaluator_role = models.BooleanField(
+        default=False,
+        help_text="Marks roles that evaluate a speech, rant, or table-topics "
+        "session. Used to filter admin dropdowns for MeetingRole.evaluates.",
+    )
+    is_evaluated_role = models.BooleanField(
+        default=False,
+        help_text="Marks roles that get evaluated by an evaluator role "
+        "(e.g. Speaker, Ranter). Used as the target-side filter for "
+        "MeetingRole.evaluates.",
+    )
     points = models.IntegerField(default=1, help_text="Points for difficulty/effort")
     time_minutes = models.PositiveIntegerField(default=0, help_text="Expected duration in minutes")
 
@@ -174,7 +186,41 @@ class MeetingRole(models.Model):
         help_text="Pathways project name for this speech.",
     )
 
+    # For an evaluator role (Evaluator (Speech), Evaluator (Rant)), the
+    # MeetingRole being evaluated. Reverse: speaker.evaluators returns the
+    # evaluator MeetingRole(s) pointing at this row. Cleared on the target's
+    # deletion (SET_NULL) so an evaluator slot survives if its speaker is
+    # removed.
+    evaluates = models.ForeignKey(
+        "self",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="evaluators",
+        help_text="For an evaluator role, the MeetingRole this evaluator "
+        "is evaluating (must be on the same meeting).",
+    )
+
     sort_order = models.PositiveIntegerField(default=0)
+
+    def clean(self):
+        super().clean()
+        if self.evaluates_id is None:
+            return
+        if self.role_id and not self.role.is_evaluator_role:
+            raise ValidationError(
+                {"evaluates": "Only evaluator roles can target another row."}
+            )
+        if self.evaluates_id == self.id:
+            raise ValidationError({"evaluates": "A role cannot evaluate itself."})
+        if self.evaluates.meeting_id != self.meeting_id:
+            raise ValidationError(
+                {"evaluates": "evaluates must be on the same meeting."}
+            )
+        if not self.evaluates.role.is_evaluated_role:
+            raise ValidationError(
+                {"evaluates": "The target row's role is not an evaluated role."}
+            )
 
     def __str__(self):
         assigned = self.user.username if self.user else "OPEN"
