@@ -165,6 +165,89 @@ For the very first deploy you'll likely want to:
 3. Create the initial `MeetingType` and template `Session` rows
    (matches what the local fixtures look like).
 
+## 6. Backup mailbox (Gmail)
+
+Nightly Postgres backups produced by `postgres/pg.sh -d` are tar files
+on the developer's Mac (a launchd job runs the dump). To survive a
+lost laptop and to give other officers access without giving them shell
+access, each new dump is emailed by `postgres/send_dump.py` to a shared
+club mailbox.
+
+The setup uses **two separate Gmail accounts** to keep officer access
+free of 2SV friction:
+
+| Account | Used for | 2SV | Who knows the password |
+| --- | --- | --- | --- |
+| **Sender** (developer's Gmail) | SMTP login from the script | Required (Google policy on App passwords) | Just you. Officers never see it. |
+| **Recipient** (club Gmail) | Archive officers read backups from | Off | Officers, via the club password manager. |
+
+The sender's 2SV is a one-time developer-only concern — the script
+uses an App password, never the human Gmail password. The recipient
+mailbox stays simple for officers: just a normal Gmail sign-in.
+
+### Sender setup (one-time, developer-only)
+
+1. Pick any Gmail you already control. 2SV must already be on (or
+   turn it on now: Google Account → Security → 2-Step Verification).
+2. Generate an **App password** at
+   https://myaccount.google.com/apppasswords.
+   **App name**: `SpeakUp backup`. Google displays the 16-character
+   password once — copy it now.
+3. In `postgres/.env`:
+
+   ```
+   BACKUP_EMAIL_FROM=<your-gmail-address>
+   BACKUP_EMAIL_APP_PASSWORD=<the-16-char-token>
+   ```
+
+4. Also store the App password in the password manager. Revoking it
+   on the same Google page instantly disables the script's send path
+   without touching the rest of the account.
+
+### Recipient mailbox setup (one-time, shared with officers)
+
+1. Create a new Gmail account, e.g. `speakup.cambridge.backups@gmail.com`.
+2. Pick a long random password; store it in the club password manager
+   so officers who need backup access can retrieve it.
+3. Leave 2-Step Verification **off** for this account. Officers will
+   sign in with just the password, and Google may prompt them with a
+   "trust this device?" challenge on first sign-in from a new browser.
+4. In `postgres/.env`:
+
+   ```
+   BACKUP_EMAIL_TO=<the-club-gmail-address>
+   ```
+
+   `BACKUP_EMAIL_TO` is comma-separated — if you ever want backups
+   mirrored to a personal address as well, add it here.
+
+### Verify
+
+```sh
+cd postgres
+./pg.sh -d
+```
+
+Check the club mailbox via webmail — you should see one new message
+with the `dump-*.tar` attached. Stderr will read
+`send_dump: emailed dump-... to <address>` on success.
+
+If the email step fails (wrong App password, no network, etc.) the
+local tar still lands in `postgres/` — the dump itself never depends
+on the email succeeding.
+
+### Retrieving a backup
+
+Any officer with the mailbox credentials can:
+
+1. Sign in to webmail at https://mail.google.com.
+2. Search for `has:attachment` (or the date of interest).
+3. Download the `.tar` attachment.
+4. Hand the file to whoever's doing the restore.
+
+The mailbox is search-indexed and 15 GB free — at one ~MB dump per
+day that's years of headroom.
+
 ## What we don't yet automate
 
 - IAM/bucket creation. The JSON is in this doc; running it via

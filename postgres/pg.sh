@@ -220,7 +220,16 @@ fi
 
 # Dump, convert, restore, or prune
 if [[ $dump -eq 1 ]]; then
-    pg_dump -h $PGHOST -p $PGPORT -d $PGDATABASE -U $PGUSER -w -F t > dump-$(date "+%Y-%m-%dT%H:%M:%S").tar
+    dump_file="$SCRIPT_DIR/dump-$(date "+%Y-%m-%dT%H:%M:%S").tar"
+    pg_dump -h $PGHOST -p $PGPORT -d $PGDATABASE -U $PGUSER -w -F t > "$dump_file"
+    # Off-site copy: email the new dump to the club's backup mailbox.
+    # send_dump.py is a no-op when BACKUP_EMAIL_ADDRESS is unset, so this is
+    # safe before the mailbox is provisioned. Failures here log to stderr
+    # but do not fail the dump — the local tar is the primary artifact.
+    py_path="$SCRIPT_DIR/../.venv/bin/python3"
+    [[ -x "$py_path" ]] || py_path="python3"
+    "$py_path" "$SCRIPT_DIR/send_dump.py" "$dump_file" || \
+        echo "pg.sh: send_dump.py exited non-zero; dump itself succeeded." >&2
 elif [[ $convert -eq 1 ]]; then
     # Build the SQLite schema with Django (correct PK/UNIQUE/FK), then copy
     # only data from Railway
