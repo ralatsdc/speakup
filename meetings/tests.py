@@ -1,11 +1,22 @@
+import tempfile
 from unittest.mock import patch
 
+from django.core import mail
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, Client, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
 from members.models import User
-from .models import Meeting, MeetingType, MeetingTypeItem, MeetingRole, Role, Attendance
+from .models import (
+    Attendance,
+    Meeting,
+    MeetingRole,
+    MeetingType,
+    MeetingTypeItem,
+    Role,
+    RoleGuideEmailLog,
+)
 from .services import convert_guest_attendance_to_user
 from .zoom import extract_zoom_meeting_id, import_zoom_registrants
 
@@ -892,3 +903,209 @@ class EvaluatorPairingTest(TestCase):
         # CSS + JS files are referenced via the inline's Media class.
         self.assertContains(response, "evaluator_pairing.css")
         self.assertContains(response, "evaluator_pairing.js")
+
+
+class FirstTimeRoleEmailTest(TestCase):
+    """Welcome email + RoleGuideEmailLog flow when a user is first assigned
+    a role that has a guidance_document. Backfill of pre-existing
+    assignments is also covered."""
+
+    @classmethod
+    def setUpClass(cls):
+        # Tests upload a tiny stub document; isolate uploads under a temp
+        # MEDIA_ROOT and tear it down with the test class.
+        super().setUpClass()
+        cls._media_tmp = tempfile.TemporaryDirectory()
+        cls._media_override = override_settings(MEDIA_ROOT=cls._media_tmp.name)
+        cls._media_override.enable()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls._media_override.disable()
+        cls._media_tmp.cleanup()
+        super().tearDownClass()
+
+    def _role_with_doc(self, name="Speaker"):
+        return Role.objects.create(
+            name=name,
+            guidance_document=SimpleUploadedFile(
+                f"{name.lower()}-guide.pdf",
+                b"%PDF-1.4 stub",
+                content_type="application/pdf",
+            ),
+        )
+
+    def setUp(self):
+        self.role = self._role_with_doc()
+        self.meeting = Meeting.objects.create(date=timezone.now(), theme="Welcome")
+        self.user = User.objects.create_user(
+            username="alice", email="alice@example.com", password="pass",
+            first_name="Alice",
+        )
+
+    def test_first_assignment_sends_email_with_attachment(self):
+        mail.outbox = []
+        mr = MeetingRole.objects.create(
+            meeting=self.meeting, role=self.role, user=self.user
+        )
+        self.assertEqual(len(mail.outbox), 1)
+        msg = mail.outbox[0]
+        self.assertEqual(msg.to, ["alice@example.com"])
+        self.assertIn("Speaker", msg.subject)
+        # One PDF attachment with our stub bytes.
+        self.assertEqual(len(msg.attachments), 1)
+        name, _, mimetype = msg.attachments[0]
+        self.assertTrue(name.endswith(".pdf"))
+        # Log row created — idempotency anchor for future assignments.
+        self.assertTrue(
+            RoleGuideEmailLog.objects.filter(user=self.user, role=self.role).exists()
+        )
+
+    def test_second_assignment_does_not_resend(self):
+        MeetingRole.objects.create(meeting=self.meeting, role=self.role, user=self.user)
+        mail.outbox = []
+        meeting2 = Meeting.objects.create(date=timezone.now())
+        MeetingRole.objects.create(meeting=meeting2, role=self.role, user=self.user)
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_unassign_then_reassign_does_not_resend(self):
+        mr = MeetingRole.objects.create(
+            meeting=self.meeting, role=self.role, user=self.user
+        )
+        mail.outbox = []
+        mr.user = None
+        mr.save()
+        mr.user = self.user
+        mr.save()
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_no_document_no_email(self):
+        role = Role.objects.create(name="Timer")
+        mail.outbox = []
+        MeetingRole.objects.create(
+            meeting=self.meeting, role=role, user=self.user
+        )
+        self.assertEqual(len(mail.outbox), 0)
+        self.assertFalse(
+            RoleGuideEmailLog.objects.filter(user=self.user, role=role).exists()
+        )
+
+    def test_open_role_does_not_send(self):
+        mail.outbox = []
+        MeetingRole.objects.create(meeting=self.meeting, role=self.role)
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_member_without_email_does_not_send(self):
+        # User.email is unique+required at the admin form layer, but the
+        # model allows blanks via direct ORM use. Guard the helper anyway.
+        no_email = User.objects.create(username="noemail")
+        mail.outbox = []
+        MeetingRole.objects.create(
+            meeting=self.meeting, role=self.role, user=no_email
+        )
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_migration_backfilled_existing_assignments(self):
+        # The data migration pre-populates the log for every (user, role)
+        # pair already in MeetingRole. Simulate a "pre-feature" assignment
+        # by inserting a log row manually, then assign for the first time
+        # at the model level → no email goes out.
+        RoleGuideEmailLog.objects.create(user=self.user, role=self.role)
+        mail.outbox = []
+        MeetingRole.objects.create(
+            meeting=self.meeting, role=self.role, user=self.user
+        )
+        self.assertEqual(len(mail.outbox), 0)
+
+
+class MemberActivityReportTest(TestCase):
+    """The custom admin pages render for staff, redirect anonymous users,
+    and aggregate Attendance + MeetingRole correctly."""
+
+    def setUp(self):
+        self.client = Client()
+        self.officer = User.objects.create_user(
+            username="officer", email="officer@example.com", password="pass",
+            is_officer=True,
+        )
+        self.member = User.objects.create_user(
+            username="alice", email="alice@example.com", password="pass",
+            first_name="Alice",
+        )
+        self.role = Role.objects.create(name="Timer")
+        self.meeting = Meeting.objects.create(date=timezone.now(), theme="A")
+        Attendance.objects.create(meeting=self.meeting, user=self.member)
+        MeetingRole.objects.create(
+            meeting=self.meeting, role=self.role, user=self.member
+        )
+
+    def test_anonymous_redirected_to_login(self):
+        url = reverse("admin:members_user_activity_report")
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 302)
+
+    def test_non_staff_redirected(self):
+        regular = User.objects.create_user(
+            username="bob", email="bob@example.com", password="pass"
+        )
+        self.client.login(username="bob", email="bob@example.com", password="pass")
+        url = reverse("admin:members_user_activity_report")
+        response = self.client.get(url)
+        # admin_view redirects unauthenticated/non-staff to admin login.
+        self.assertEqual(response.status_code, 302)
+
+    def test_officer_sees_summary(self):
+        self.client.login(username="officer", email="officer@example.com", password="pass")
+        url = reverse("admin:members_user_activity_report")
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        # Alice shows up with 1 meeting attended and 1 role taken.
+        self.assertContains(response, "Alice")
+        members = list(response.context["members"])
+        alice = next(m for m in members if m.username == "alice")
+        self.assertEqual(alice.meetings_attended, 1)
+        self.assertEqual(alice.roles_taken, 1)
+
+    def test_summary_excludes_guests(self):
+        guest = User.objects.create_user(
+            username="g", email="g@example.com", password="pass", is_guest=True
+        )
+        self.client.login(username="officer", email="officer@example.com", password="pass")
+        response = self.client.get(reverse("admin:members_user_activity_report"))
+        usernames = [m.username for m in response.context["members"]]
+        self.assertNotIn("g", usernames)
+
+    def test_detail_page_lists_meeting_and_role(self):
+        self.client.login(username="officer", email="officer@example.com", password="pass")
+        url = reverse(
+            "admin:members_user_activity_report_detail", args=[self.member.pk]
+        )
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["total_meetings"], 1)
+        self.assertEqual(response.context["total_roles"], 1)
+        self.assertContains(response, "Timer")
+
+    def test_date_filter_excludes_out_of_range_meeting(self):
+        # Move the existing meeting outside the filter window.
+        old_meeting = Meeting.objects.create(
+            date=timezone.now() - timezone.timedelta(days=365)
+        )
+        Attendance.objects.create(meeting=old_meeting, user=self.member)
+        self.client.login(username="officer", email="officer@example.com", password="pass")
+        today = timezone.now().date().isoformat()
+        url = reverse("admin:members_user_activity_report")
+        response = self.client.get(url, {"start": today, "end": today})
+        alice = next(m for m in response.context["members"] if m.username == "alice")
+        # Today's meeting is in range; the year-old one is not.
+        self.assertEqual(alice.meetings_attended, 1)
+
+    def test_changelist_has_activity_report_link(self):
+        # The custom change_list template injects an "Activity report" link
+        # in the object-tools row.
+        self.officer.is_superuser = True
+        self.officer.save()
+        self.client.login(username="officer", email="officer@example.com", password="pass")
+        response = self.client.get(reverse("admin:members_user_changelist"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Member activity report")

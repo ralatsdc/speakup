@@ -31,6 +31,13 @@ class Role(models.Model):
     )
     points = models.IntegerField(default=1, help_text="Points for difficulty/effort")
     time_minutes = models.PositiveIntegerField(default=0, help_text="Expected duration in minutes")
+    guidance_document = models.FileField(
+        upload_to="role_guides/",
+        blank=True,
+        null=True,
+        help_text="Attached to the welcome email a member receives the first "
+        "time they take this role. Leave blank to skip the email.",
+    )
 
     def __str__(self):
         return self.name
@@ -262,6 +269,32 @@ class Attendance(models.Model):
         return f"{self.guest_first_name} {self.guest_last_name} (Guest) @ {self.meeting}"
 
 
+class RoleGuideEmailLog(models.Model):
+    """One row per (user, role) the moment we've sent the first-time
+    role-guide email. Acts as the idempotency record so the email is sent
+    at most once per member per role, even if the member is unassigned and
+    later reassigned to a row of the same role.
+    """
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="role_guide_emails",
+    )
+    role = models.ForeignKey(Role, on_delete=models.CASCADE)
+    sent_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "role"], name="unique_role_guide_email_per_user_role"
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.user} ← {self.role} guide ({self.sent_at:%Y-%m-%d})"
+
+
 @receiver(post_save, sender=Meeting)
 def populate_meeting_from_type(sender, instance, created, **kwargs):
     """Auto-create MeetingSession and MeetingRole rows from the MeetingType template."""
@@ -289,3 +322,24 @@ def populate_meeting_from_type(sender, instance, created, **kwargs):
                     )
         except Exception:
             logger.exception("Failed to populate meeting %s from type", instance)
+
+
+@receiver(post_save, sender=MeetingRole)
+def send_first_time_role_email_on_assignment(sender, instance, created, **kwargs):
+    """Send a one-time welcome email with the role-guidance attachment the
+    first time a member is assigned to a given role. Idempotency is anchored
+    on RoleGuideEmailLog (user, role); existing pre-feature assignments were
+    backfilled by migration so members aren't re-onboarded retroactively.
+    """
+    if instance.user_id is None:
+        return
+    # Lazy import keeps models.py free of email/utils coupling and avoids
+    # circular import (utils imports from members.models).
+    from .utils import send_first_time_role_email
+
+    try:
+        send_first_time_role_email(instance)
+    except Exception:
+        logger.exception(
+            "Failed to send first-time role email for MeetingRole %s", instance.pk
+        )

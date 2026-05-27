@@ -1,0 +1,79 @@
+{% extends "admin/base_site.html" %}
+
+{% block breadcrumbs %}
+    <div class="breadcrumbs">
+        <a href="{% url 'admin:index' %}">Home</a>
+        &rsaquo; <a href="{% url 'admin:app_list' app_label='members' %}">Members</a>
+        &rsaquo; <a href="{% url 'admin:members_user_changelist' %}">Users</a>
+        &rsaquo; <a href="{% url 'admin:members_user_activity_report' %}">Activity report</a>
+        &rsaquo; {{ member }}
+    </div>
+{% endblock %}
+
+{% block content %}
+    <p>
+        <strong>{{ total_meetings }}</strong> meetings attended ·
+        <strong>{{ total_roles }}</strong> roles taken
+        {% if start or end %}
+            (filter:
+            {% if start %}from {{ start }}{% endif %}
+            {% if start and end %} {% endif %}
+            {% if end %}to {{ end }}{% endif %})
+        {% endif %}
+    </p>
+
+    <h2>Per-role breakdown</h2>
+    {% if role_counts %}
+        <table id="result_list" style="max-width: 30em;">
+            <thead>
+                <tr><th>Role</th><th>Count</th></tr>
+            </thead>
+            <tbody>
+                {% for row in role_counts %}
+                    <tr class="{% cycle 'row1' 'row2' %}">
+                        <td>{{ row.role__name }}</td>
+                        <td>{{ row.count }}</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% else %}
+        <p><em>No roles in this range.</em></p>
+    {% endif %}
+
+    <h2 style="margin-top: 1.5em;">Meeting-by-meeting</h2>
+    {% if meeting_rows %}
+        <table id="result_list">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Meeting</th>
+                    <th>Roles</th>
+                    <th>Attended</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in meeting_rows %}
+                    <tr class="{% cycle 'row1' 'row2' %}">
+                        <td>{{ row.meeting.date|date:"Y-m-d" }}</td>
+                        <td>
+                            <a href="{% url 'admin:meetings_meeting_change' row.meeting.pk %}">
+                                {{ row.meeting }}
+                            </a>
+                        </td>
+                        <td>
+                            {% for mr in row.roles %}
+                                {{ mr.role.name }}{% if mr.in_person is True %} (in person){% elif mr.in_person is False %} (remote){% endif %}{% if not forloop.last %}, {% endif %}
+                            {% empty %}
+                                &mdash;
+                            {% endfor %}
+                        </td>
+                        <td>{% if row.attended %}✓{% else %}{% endif %}</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% else %}
+        <p><em>No activity in this range.</em></p>
+    {% endif %}
+{% endblock %}

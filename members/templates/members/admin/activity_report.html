@@ -1,0 +1,138 @@
+{% extends "admin/base_site.html" %}
+
+{% block breadcrumbs %}
+    <div class="breadcrumbs">
+        <a href="{% url 'admin:index' %}">Home</a>
+        &rsaquo; <a href="{% url 'admin:app_list' app_label='members' %}">Members</a>
+        &rsaquo; <a href="{% url 'admin:members_user_changelist' %}">Users</a>
+        &rsaquo; Activity report
+    </div>
+{% endblock %}
+
+{% block extrastyle %}
+    {{ block.super }}
+    <style>
+        table#activity-report-table th.sortable {
+            cursor: pointer;
+            user-select: none;
+        }
+        table#activity-report-table th.sortable::after {
+            content: " ↕";
+            opacity: 0.35;
+        }
+        table#activity-report-table th.sort-asc::after { content: " ▲"; opacity: 1; }
+        table#activity-report-table th.sort-desc::after { content: " ▼"; opacity: 1; }
+        .activity-report-presets {
+            margin-bottom: 0.5em;
+        }
+        .activity-report-presets .preset-label {
+            color: var(--body-quiet-color, #666);
+            margin-right: 0.5em;
+        }
+        .activity-report-presets a {
+            margin-right: 0.4em;
+        }
+        form.activity-report-filter label {
+            margin-right: 0.4em;
+        }
+        form.activity-report-filter .field-row {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4em;
+            margin-right: 1em;
+        }
+    </style>
+{% endblock %}
+
+{% block content %}
+    <div class="activity-report-presets">
+        <span class="preset-label">Quick range:</span>
+        {% for p in presets %}
+            <a href="?start={{ p.start }}&end={{ p.end }}" class="button">{{ p.label }}</a>
+        {% endfor %}
+        <a href="{% url 'admin:members_user_activity_report' %}" class="button">All time</a>
+    </div>
+    <form method="get" class="activity-report-filter" style="margin-bottom: 1em;">
+        <span class="field-row">
+            <label for="id_start">From:</label>
+            <input type="date" id="id_start" name="start" value="{{ start }}">
+        </span>
+        <span class="field-row">
+            <label for="id_end">To:</label>
+            <input type="date" id="id_end" name="end" value="{{ end }}">
+        </span>
+        <button type="submit" class="button">Filter</button>
+        {% if has_filter %}
+            <a href="{% url 'admin:members_user_activity_report' %}">Clear</a>
+        {% endif %}
+    </form>
+
+    <table id="activity-report-table" class="sortable-table">
+        <thead>
+            <tr>
+                <th class="sortable" data-sort="text">Member</th>
+                <th class="sortable" data-sort="number">Meetings attended</th>
+                <th class="sortable" data-sort="number">Roles taken</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for member in members %}
+                <tr class="{% cycle 'row1' 'row2' %}">
+                    <td>{{ member }}</td>
+                    <td>{{ member.meetings_attended }}</td>
+                    <td>{{ member.roles_taken }}</td>
+                    <td>
+                        <a href="{% url 'admin:members_user_activity_report_detail' member.pk %}{% if start or end %}?{% if start %}start={{ start }}{% endif %}{% if start and end %}&{% endif %}{% if end %}end={{ end }}{% endif %}{% endif %}">
+                            Details
+                        </a>
+                    </td>
+                </tr>
+            {% empty %}
+                <tr>
+                    <td colspan="4"><em>No members.</em></td>
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <script>
+    (function () {
+        const table = document.getElementById("activity-report-table");
+        if (!table) return;
+        const tbody = table.tBodies[0];
+        const headers = table.querySelectorAll("th.sortable");
+
+        headers.forEach((th, index) => {
+            th.addEventListener("click", () => {
+                const isAsc = th.classList.contains("sort-asc");
+                const direction = isAsc ? -1 : 1;
+                const type = th.dataset.sort;
+
+                headers.forEach(h => h.classList.remove("sort-asc", "sort-desc"));
+                th.classList.add(isAsc ? "sort-desc" : "sort-asc");
+
+                const rows = Array.from(tbody.querySelectorAll("tr"));
+                // "Empty" placeholder rows (single colspan'd cell) shouldn't
+                // get reordered against data rows.
+                if (rows.length <= 1) return;
+
+                rows.sort((a, b) => {
+                    const av = a.children[index].textContent.trim();
+                    const bv = b.children[index].textContent.trim();
+                    if (type === "number") {
+                        return direction * (parseFloat(av) - parseFloat(bv));
+                    }
+                    return direction * av.localeCompare(bv, undefined, {sensitivity: "base"});
+                });
+                rows.forEach(r => tbody.appendChild(r));
+                // Re-apply alternating row classes after reorder.
+                rows.forEach((r, i) => {
+                    r.classList.remove("row1", "row2");
+                    r.classList.add(i % 2 === 0 ? "row1" : "row2");
+                });
+            });
+        });
+    })();
+    </script>
+{% endblock %}

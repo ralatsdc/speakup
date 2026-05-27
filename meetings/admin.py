@@ -6,7 +6,18 @@ from django.db.models import OuterRef, Subquery
 from django.http import HttpResponseRedirect
 from django.urls import path
 
-from .models import Meeting, MeetingSession, Role, MeetingRole, MeetingType, MeetingTypeItem, MeetingTypeSession, Session, Attendance
+from .models import (
+    Attendance,
+    Meeting,
+    MeetingRole,
+    MeetingSession,
+    MeetingType,
+    MeetingTypeItem,
+    MeetingTypeSession,
+    Role,
+    RoleGuideEmailLog,
+    Session,
+)
 from .utils import send_meeting_reminders
 
 
@@ -19,8 +30,21 @@ class RoleAdmin(admin.ModelAdmin):
         "is_evaluated_role",
         "points",
         "time_minutes",
+        "has_guide",
     )
     list_filter = ("shows_pathways_fields", "is_evaluator_role", "is_evaluated_role")
+
+    @admin.display(boolean=True, description="Guide?")
+    def has_guide(self, obj):
+        return bool(obj.guidance_document)
+
+
+@admin.register(RoleGuideEmailLog)
+class RoleGuideEmailLogAdmin(admin.ModelAdmin):
+    list_display = ("user", "role", "sent_at")
+    list_filter = ("role",)
+    search_fields = ("user__username", "user__first_name", "user__last_name", "role__name")
+    readonly_fields = ("sent_at",)
 
 
 @admin.register(Session)
