@@ -135,14 +135,40 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 
 # --- Media files ---------------------------------------------------------
 # Role guidance PDFs (attached to first-time role emails) are uploaded by
-# officers via the Role admin and stored under MEDIA_ROOT/role_guides/.
+# officers via the Role admin. In prod they live in an S3 bucket; locally
+# they're written to MEDIA_ROOT so dev/tests don't need AWS credentials.
 MEDIA_URL = "media/"
 MEDIA_ROOT = BASE_DIR / "media"
 
+AWS_STORAGE_BUCKET_NAME = os.getenv("AWS_STORAGE_BUCKET_NAME", "")
+
+STORAGES = {
+    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+}
+
 if DEPLOY:
-    STORAGES = {
-        "staticfiles": {
-            "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+    STORAGES["staticfiles"] = {
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+    }
+
+if AWS_STORAGE_BUCKET_NAME:
+    # Bucket has Block Public Access ON and "ACLs disabled" (Bucket owner
+    # enforced) — objects are private by virtue of the bucket policy, not
+    # per-object ACLs. PutObject rejects any ACL parameter under that
+    # ownership model, so default_acl must stay unset.
+    # FileField.url is never rendered to clients — guidance documents are
+    # only read server-side to attach to outbound email. See
+    # docs/railway-setup.md for the bucket + IAM-policy setup.
+    STORAGES["default"] = {
+        "BACKEND": "storages.backends.s3.S3Storage",
+        "OPTIONS": {
+            "bucket_name": AWS_STORAGE_BUCKET_NAME,
+            "region_name": os.getenv("AWS_S3_REGION_NAME", "us-east-1"),
+            "access_key": os.getenv("AWS_ACCESS_KEY_ID"),
+            "secret_key": os.getenv("AWS_SECRET_ACCESS_KEY"),
+            "querystring_auth": False,
+            "file_overwrite": False,
         },
     }
 
