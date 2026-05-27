@@ -133,6 +133,12 @@ USE_TZ = True
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
+# --- Media files ---------------------------------------------------------
+# Role guidance PDFs (attached to first-time role emails) are uploaded by
+# officers via the Role admin and stored under MEDIA_ROOT/role_guides/.
+MEDIA_URL = "media/"
+MEDIA_ROOT = BASE_DIR / "media"
+
 if DEPLOY:
     STORAGES = {
         "staticfiles": {

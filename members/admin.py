@@ -1,9 +1,12 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 from django.contrib.auth.forms import UserCreationForm
+from django.urls import path
 from import_export.admin import ImportExportModelAdmin
+
 from .models import User
 from .resources import UserResource
+from .views import activity_report, activity_report_detail
 
 DEFAULT_PASSWORD = "Speak-Up-2026"
 
@@ -75,6 +78,9 @@ def remove_active(modeladmin, request, queryset):
 
 
 class CustomUserAdmin(ImportExportModelAdmin, UserAdmin):
+    # Custom changelist template injects an "Activity report" link in the
+    # object-tools row, alongside Django's stock "Add user" button.
+    change_list_template = "members/admin/user_change_list.html"
     add_form = CustomUserCreationForm
     add_fieldsets = (
         (
@@ -121,6 +127,25 @@ class CustomUserAdmin(ImportExportModelAdmin, UserAdmin):
     search_fields = ("username", "first_name", "last_name", "email")
 
     actions = [make_guest, remove_guest, make_officer, remove_officer, make_active, remove_active]
+
+    def get_urls(self):
+        urls = super().get_urls()
+        # Custom URLs go before the default ones — Django routes top-down,
+        # and the default ``<path:object_id>/change/`` would otherwise eat
+        # the "activity-report" segment.
+        custom = [
+            path(
+                "activity-report/",
+                self.admin_site.admin_view(activity_report),
+                name="members_user_activity_report",
+            ),
+            path(
+                "activity-report/<int:user_id>/",
+                self.admin_site.admin_view(activity_report_detail),
+                name="members_user_activity_report_detail",
+            ),
+        ]
+        return custom + urls
 
 
 
