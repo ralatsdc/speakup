@@ -1,6 +1,6 @@
 from unittest.mock import patch
 
-from django.test import TestCase, Client
+from django.test import TestCase, Client, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
@@ -547,3 +547,45 @@ class ZoomImportTest(TestCase):
         meeting_no_link = Meeting.objects.create(date=timezone.now())
         with self.assertRaises(ValueError):
             import_zoom_registrants(meeting_no_link)
+
+
+class ZoomRegistrationFlagTest(TestCase):
+    """Verify the ZOOM_REGISTRATION_ENABLED gate hides the admin button and
+    rejects the import action."""
+
+    def setUp(self):
+        self.client = Client()
+        self.admin_user = User.objects.create_user(
+            username="admin", password="testpass",
+            is_staff=True, is_superuser=True,
+        )
+        self.client.login(username="admin", password="testpass")
+        self.meeting = Meeting.objects.create(
+            date=timezone.now(),
+            zoom_link="https://us02web.zoom.us/j/1234567890",
+        )
+
+    @override_settings(ZOOM_REGISTRATION_ENABLED=False)
+    def test_button_hidden_when_flag_off(self):
+        response = self.client.get(
+            reverse("admin:meetings_meeting_change", args=[self.meeting.pk])
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, "Import Zoom Registrants")
+
+    @override_settings(ZOOM_REGISTRATION_ENABLED=True)
+    def test_button_visible_when_flag_on(self):
+        response = self.client.get(
+            reverse("admin:meetings_meeting_change", args=[self.meeting.pk])
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Import Zoom Registrants")
+
+    @override_settings(ZOOM_REGISTRATION_ENABLED=False)
+    @patch("meetings.zoom.import_zoom_registrants")
+    def test_import_action_blocked_when_flag_off(self, mock_import):
+        response = self.client.post(
+            reverse("admin:meeting-zoom-import", args=[self.meeting.pk])
+        )
+        self.assertEqual(response.status_code, 302)
+        mock_import.assert_not_called()
