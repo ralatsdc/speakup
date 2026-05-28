@@ -438,6 +438,53 @@ class EmailUtilsTest(TestCase):
         self.assertEqual(feedback_count, 0)
         self.assertEqual(guest_count, 1)
 
+    @patch("meetings.utils.send_mass_mail")
+    def test_feedback_not_resent_when_notes_unchanged(self, mock_send):
+        from .utils import send_meeting_feedback
+
+        self.assignment.admin_notes = "Great job!"
+        self.assignment.save()
+
+        first, _ = send_meeting_feedback(self.meeting)
+        self.assertEqual(first, 1)
+        self.assignment.refresh_from_db()
+        self.assertEqual(self.assignment.feedback_sent_notes, "Great job!")
+
+        second, _ = send_meeting_feedback(self.meeting)
+        self.assertEqual(second, 0)
+
+    @patch("meetings.utils.send_mass_mail")
+    def test_feedback_resent_when_notes_edited(self, mock_send):
+        from .utils import send_meeting_feedback
+
+        self.assignment.admin_notes = "Great job!"
+        self.assignment.save()
+        send_meeting_feedback(self.meeting)
+
+        self.assignment.admin_notes = "Great job! One tip: slow down."
+        self.assignment.save()
+        count, _ = send_meeting_feedback(self.meeting)
+        self.assertEqual(count, 1)
+
+    @patch("meetings.utils.send_mass_mail")
+    def test_guest_thank_you_not_resent(self, mock_send):
+        from .utils import send_meeting_feedback
+
+        attendance = Attendance.objects.create(
+            meeting=self.meeting,
+            guest_first_name="Jane",
+            guest_last_name="Walk-in",
+            guest_email="jane@example.com",
+        )
+
+        _, first = send_meeting_feedback(self.meeting)
+        self.assertEqual(first, 1)
+        attendance.refresh_from_db()
+        self.assertIsNotNone(attendance.thank_you_sent_at)
+
+        _, second = send_meeting_feedback(self.meeting)
+        self.assertEqual(second, 0)
+
 
 class ZoomUrlParsingTest(TestCase):
     def test_standard_url(self):

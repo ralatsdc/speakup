@@ -79,15 +79,21 @@ def send_meeting_reminders(meeting):
 
 def send_meeting_feedback(meeting):
     """
-    Sends two types of post-meeting emails:
-    1. Role feedback to members who have 'admin_notes' on their role.
-    2. Thank-you emails to guests who attended.
+    Sends two types of post-meeting emails, each at most once per recipient:
+    1. Role feedback to members who have 'admin_notes' on their role. Re-sent
+       only when the notes are edited after a previous send.
+    2. Thank-you emails to guests who attended (once per guest).
     """
+    from django.utils import timezone
+    from .models import Attendance, MeetingRole
+
     messages = []
     sender = settings.DEFAULT_FROM_EMAIL
     meeting_date = meeting.date.strftime("%A, %B %d")
 
-    # Role feedback for members with admin_notes
+    # Role feedback for members whose admin_notes is new or changed since the
+    # last send. feedback_sent_notes holds the content last emailed.
+    roles_to_stamp = []
     roles_with_feedback = meeting.roles.exclude(admin_notes="").exclude(
         user__isnull=True
     )
@@ -96,6 +102,8 @@ def send_meeting_feedback(meeting):
     for assignment in roles_with_feedback:
         user = assignment.user
         if not user.email:
+            continue
+        if assignment.admin_notes == assignment.feedback_sent_notes:
             continue
 
         subject = f"Feedback: Your role as {assignment.role.name}"
@@ -111,12 +119,14 @@ def send_meeting_feedback(meeting):
         )
 
         messages.append((subject, body, sender, [user.email]))
+        roles_to_stamp.append(assignment)
         count += 1
 
-    # Thank-you emails to guests
+    # Thank-you emails to guests not yet thanked
+    attendances_to_stamp = []
     guest_attendances = meeting.attendances.filter(
         models.Q(user__is_guest=True) | models.Q(user__isnull=True, guest_email__gt="")
-    )
+    ).filter(thank_you_sent_at__isnull=True)
 
     guest_count = 0
     for attendance in guest_attendances:
@@ -141,6 +151,7 @@ def send_meeting_feedback(meeting):
         )
 
         messages.append((subject, body, sender, [email]))
+        attendances_to_stamp.append(attendance)
         guest_count += 1
 
     try:
@@ -148,6 +159,19 @@ def send_meeting_feedback(meeting):
     except Exception:
         logger.exception("Failed to send meeting feedback for %s", meeting)
         raise
+
+    # Record what went out, only after a successful batch send, so repeated
+    # button clicks don't re-send the same feedback.
+    if roles_to_stamp:
+        for assignment in roles_to_stamp:
+            assignment.feedback_sent_notes = assignment.admin_notes
+        MeetingRole.objects.bulk_update(roles_to_stamp, ["feedback_sent_notes"])
+    if attendances_to_stamp:
+        now = timezone.now()
+        for attendance in attendances_to_stamp:
+            attendance.thank_you_sent_at = now
+        Attendance.objects.bulk_update(attendances_to_stamp, ["thank_you_sent_at"])
+
     return count, guest_count
 
 
