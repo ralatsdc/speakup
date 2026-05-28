@@ -10,6 +10,12 @@
     {{ pathways_role_ids|json_script:"pathways-role-ids" }}
 {% endblock %}
 
+{# Suppress Django admin's stock subtitle (an <h2> rendering Meeting.__str__ #}
+{# as "YYYY-MM-DD (MeetingType)"). That text appears immediately above our #}
+{# identity banner, which carries the same information in friendlier form, #}
+{# so the stock subtitle is pure duplication. #}
+{% block content_subtitle %}{% endblock %}
+
 {% block field_sets %}
     {# Identity banner: read-only summary of the meeting. Shown only when #}
     {# editing an existing meeting (original is None on the add form). #}
