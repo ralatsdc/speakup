@@ -248,6 +248,73 @@ Any officer with the mailbox credentials can:
 The mailbox is search-indexed and 15 GB free — at one ~MB dump per
 day that's years of headroom.
 
+## 7. Restore verification (`pg.sh -t`)
+
+A backup that's never been restored is a backup you can't trust.
+`pg.sh -t` exercises the full restore path against an *ephemeral*
+Postgres container, so we know every nightly dump is actually
+restorable without risking the live database.
+
+What it does, in order:
+
+1. Finds the newest `dump-*.tar` in `postgres/`.
+2. Starts a throwaway `postgres:17` container named
+   `speakup-pg-restore-test`, listening on `127.0.0.1:55432`.
+3. Waits up to 30 seconds for the server to accept connections.
+4. Runs `pg_restore` against it.
+5. Runs sanity SELECTs: row counts on `members_user`,
+   `meetings_meeting`, `meetings_attendance`, `meetings_meetingrole`,
+   plus the `MAX(date)` of meetings. Each statement runs with
+   `ON_ERROR_STOP=1` so a missing table aborts immediately.
+6. Stops the container (which removes it — `docker run --rm`).
+
+Requires **Docker Desktop** installed and running. The first invocation
+pulls `postgres:17` (~150 MB); subsequent runs use the cached image.
+
+### Manual run
+
+```sh
+cd postgres
+./pg.sh -t
+```
+
+Expected output ends with:
+
+```
+pg.sh: restore-test PASSED for dump-YYYY-MM-DDTHH:MM:SS.tar.
+```
+
+Failure modes:
+
+- `pg.sh: docker not found in PATH` — install Docker Desktop and
+  ensure `/usr/local/bin/docker` is on `PATH`.
+- `pg.sh: docker daemon not running` — start Docker Desktop.
+- `pg.sh: no dump-*.tar files…` — run `./pg.sh -d` first to produce one.
+- `pg.sh: container never became ready` — the postgres image failed to
+  boot in 30 seconds. Almost always a port conflict on 55432; check
+  with `lsof -i :55432`.
+- `pg.sh: pg_restore exited non-zero` — the dump is corrupt or was
+  produced against an incompatible schema version.
+- `pg.sh: sanity checks failed` — restore "succeeded" but a required
+  table is missing or empty. Likely a partial dump.
+
+### Scheduled run
+
+A second launchd plist (`postgres/com.user.pgrestoretest.plist`) fires
+`pg.sh -t` at 16:00 daily — one hour after the dump at 15:00. Decoupling
+the two means a failed dump doesn't block the verification, and a
+failed verification still leaves the previous successful dump intact.
+
+Install once:
+
+```sh
+cp postgres/com.user.pgrestoretest.plist ~/Library/LaunchAgents/
+launchctl load ~/Library/LaunchAgents/com.user.pgrestoretest.plist
+```
+
+Logs land in `/tmp/com.user.pgrestoretest.{out,err}`. Tail them after a
+day or two to confirm it's running.
+
 ## What we don't yet automate
 
 - IAM/bucket creation. The JSON is in this doc; running it via

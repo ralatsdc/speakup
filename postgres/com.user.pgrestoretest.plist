@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.user.pgrestoretest</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>pg.sh</string>
+        <string>-t</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/raymondleclair/Projects/Home/Toastmasters/Speak-Up-Cambridge/speakup/postgres</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <!-- Docker Desktop installs the CLI here on macOS; explicit PATH
+             avoids surprises when launchd runs the job without a login
+             shell's PATH. -->
+        <key>PATH</key>
+        <string>/opt/local/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+
+    <!-- Fires at 16:00 daily, one hour after the dump (com.user.pgdump
+         runs at 15:00). Decoupling the two means a failed dump doesn't
+         block the verification, and a failed verification still leaves
+         the previous successful dump intact for restoration. -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>16</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/com.user.pgrestoretest.out</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/com.user.pgrestoretest.err</string>
+</dict>
+</plist>
