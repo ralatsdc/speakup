@@ -178,6 +178,14 @@ class MeetingRole(models.Model):
     time_minutes = models.PositiveIntegerField(default=0, help_text="Expected duration in minutes")
     notes = models.TextField(blank=True, help_text="Speech title, project details, or feedback.")
     admin_notes = models.TextField(blank=True, help_text="Private feedback or details for the follow-up email.")
+    feedback_sent_notes = models.TextField(
+        blank=True,
+        default="",
+        editable=False,
+        help_text="The admin_notes content last emailed as feedback. Lets the "
+        "feedback button send once per member, then re-send only when the "
+        "notes are edited.",
+    )
 
     pathways_path = models.CharField(
         max_length=50,
@@ -253,6 +261,13 @@ class Attendance(models.Model):
     guest_email = models.EmailField(blank=True)
 
     timestamp = models.DateTimeField(auto_now_add=True)
+    thank_you_sent_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        editable=False,
+        help_text="When the guest thank-you email was last sent. Null until "
+        "sent; keeps repeated feedback runs from re-thanking a guest.",
+    )
 
     class Meta:
         constraints = [
