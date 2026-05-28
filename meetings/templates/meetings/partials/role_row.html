@@ -3,90 +3,69 @@
     <!-- Column 1: Role -->
     <td class="fw-bold align-middle">
         {{ assignment.role.name }}
-    </td>
-
-    <!-- Column 2: Member & Notes -->
-    <td class="align-middle">
-        <!-- 1. The User / Button Logic (Existing) -->
-        <div class="d-flex justify-content-between align-items-center">
-            <div>
-                {% if assignment.user %}
-                    {% if assignment.user == user %}
-                        <span class="text-success fw-bold me-2">You</span>
-                        {% if user.is_guest %}<span class="badge rounded-pill bg-info text-dark me-2">Guest</span>{% endif %}
-                        {% if assignment.in_person is not None %}<span class="badge rounded-pill {% if assignment.in_person %}bg-success{% else %}bg-secondary{% endif %} me-2">{% if assignment.in_person %}In Person{% else %}Remote{% endif %}</span>{% endif %}
-                        <button class="btn btn-sm btn-outline-danger"
-                                hx-post="{% url 'toggle_role' assignment.id %}"
-                                hx-target="#role-row-{{ assignment.id }}"
-                                hx-swap="outerHTML">Drop</button>
-                    {% else %}
-                        {{ assignment.user.first_name }} {{ assignment.user.last_name }}
-                        {% if assignment.user.is_guest %}<span class="badge rounded-pill bg-info text-dark ms-1">Guest</span>{% endif %}
-                        {% if assignment.in_person is not None %}<span class="badge rounded-pill {% if assignment.in_person %}bg-success{% else %}bg-secondary{% endif %} ms-1">{% if assignment.in_person %}In Person{% else %}Remote{% endif %}</span>{% endif %}
-                    {% endif %}
-                    {% if assignment.evaluates and assignment.evaluates.user %}
-                        <div class="small text-muted">evaluating {{ assignment.evaluates.user.first_name }} {{ assignment.evaluates.user.last_name }}</div>
-                    {% endif %}
-                    {% with evaluator=assignment.evaluators.first %}
-                        {% if evaluator and evaluator.user %}
-                            <div class="small text-muted">evaluator: {{ evaluator.user.first_name }} {{ evaluator.user.last_name }}</div>
-                        {% endif %}
-                    {% endwith %}
-                {% else %}
-                    {% if user.is_authenticated %}
-                        <button class="btn btn-sm btn-primary"
-                                data-bs-toggle="modal" data-bs-target="#signupModal"
-                                hx-get="{% url 'signup_role_form' assignment.id %}"
-                                hx-target="#signupModalContent">Sign Up</button>
-                    {% else %}
-                        <span class="text-muted fst-italic">-- Open --</span>
-                    {% endif %}
-                {% endif %}
-            </div>
-
-            <!-- 2. The Edit Icon (Only for Assignee or Officer) -->
-            {% if assignment.user and user.is_authenticated %}
-                {% if assignment.user == user or user.is_officer %}
-                    <button class="btn btn-link btn-sm text-secondary p-0 ms-2 note-toggle-btn"
-                            data-note-id="{{ assignment.id }}"
-                            title="Edit Note / Speech Title"
-                            aria-label="Edit note for {{ assignment.role.name }}">
-                        ✏️
-                    </button>
-                {% endif %}
-            {% endif %}
-        </div>
-
-        <!-- 3. The Note Display Area -->
-        {% if assignment.user %}
-            <div class="mt-1 small text-muted" id="note-display-{{ assignment.id }}">
-                {% if assignment.notes %}
-                    <em>{{ assignment.notes|linebreaksbr }}</em>
-                {% endif %}
-            </div>
-
-            <!-- 4. The Hidden Edit Form -->
-            <div id="note-edit-{{ assignment.id }}" class="mt-2 d-none">
-                <form hx-post="{% url 'save_role_note' assignment.id %}" 
-                      hx-target="#role-row-{{ assignment.id }}"
-                      hx-swap="outerHTML">
-                    <textarea name="note_content" class="form-control form-control-sm mb-1" rows="2" placeholder="Speech Title or Notes...">{{ assignment.notes }}</textarea>
-                    <button type="submit" class="btn btn-success btn-sm py-0 px-2">Save</button>
-                    <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-2 note-cancel-btn"
-                            data-note-id="{{ assignment.id }}">
-                        Cancel
-                    </button>
-                </form>
-            </div>
+        {% if assignment.time_minutes %}
+            <div class="small text-muted fw-normal">{{ assignment.time_minutes }} min</div>
         {% endif %}
     </td>
 
-    <!-- Column 3: Status -->
+    <!-- Column 2: Status (Sign Up button, or member + badges + Drop) -->
     <td class="align-middle">
         {% if assignment.user %}
-            <span class="badge bg-success">Filled</span>
+            {% if assignment.user == user %}
+                <span class="text-success fw-bold me-2">You</span>
+                {% if user.is_guest %}<span class="badge rounded-pill bg-info text-dark me-2">Guest</span>{% endif %}
+                {% if assignment.in_person is not None %}<span class="badge rounded-pill {% if assignment.in_person %}bg-success{% else %}bg-secondary{% endif %} me-2">{{ assignment.attendance_label }}</span>{% endif %}
+                <button class="btn btn-sm btn-outline-danger"
+                        hx-post="{% url 'toggle_role' assignment.id %}"
+                        hx-target="#role-row-{{ assignment.id }}"
+                        hx-swap="outerHTML">Drop</button>
+            {% else %}
+                {{ assignment.user.first_name }} {{ assignment.user.last_name }}
+                {% if assignment.user.is_guest %}<span class="badge rounded-pill bg-info text-dark ms-1">Guest</span>{% endif %}
+                {% if assignment.in_person is not None %}<span class="badge rounded-pill {% if assignment.in_person %}bg-success{% else %}bg-secondary{% endif %} ms-1">{{ assignment.attendance_label }}</span>{% endif %}
+            {% endif %}
+            {% with evaluating=assignment.evaluating_label %}
+                {% if evaluating %}<div class="small text-muted">{{ evaluating }}</div>{% endif %}
+            {% endwith %}
+            {% with evaluated_by=assignment.evaluated_by_label %}
+                {% if evaluated_by %}<div class="small text-muted">{{ evaluated_by }}</div>{% endif %}
+            {% endwith %}
         {% else %}
-            <span class="badge bg-warning text-dark">Needed</span>
+            {% if user.is_authenticated %}
+                <button class="btn btn-sm btn-primary"
+                        data-bs-toggle="modal" data-bs-target="#signupModal"
+                        hx-get="{% url 'signup_role_form' assignment.id %}"
+                        hx-target="#signupModalContent">Sign Up</button>
+            {% else %}
+                <span class="text-muted fst-italic">-- Open --</span>
+            {% endif %}
+        {% endif %}
+    </td>
+
+    <!-- Column 3: Notes (same content as the agenda) -->
+    <td class="align-middle">
+        {% if assignment.user %}
+            <div class="d-flex justify-content-between align-items-start">
+                <div class="small text-muted">
+                    {% with agenda_notes=assignment.agenda_notes %}
+                        {% if agenda_notes %}<em>{{ agenda_notes|linebreaksbr }}</em>{% endif %}
+                    {% endwith %}
+                </div>
+
+                <!-- Edit opens the same dialog as sign-up (assignee or officer) -->
+                {% if user.is_authenticated %}
+                    {% if assignment.user == user or user.is_officer %}
+                        <button class="btn btn-link btn-sm text-secondary p-0 ms-2"
+                                data-bs-toggle="modal" data-bs-target="#signupModal"
+                                hx-get="{% url 'signup_role_form' assignment.id %}"
+                                hx-target="#signupModalContent"
+                                title="Edit attendance, notes, and Pathways"
+                                aria-label="Edit {{ assignment.role.name }}">
+                            ✏️
+                        </button>
+                    {% endif %}
+                {% endif %}
+            </div>
         {% endif %}
     </td>
 </tr>

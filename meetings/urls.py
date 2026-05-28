@@ -2,8 +2,8 @@ from django.urls import path
 from . import views
 
 urlpatterns = [
-    # Upcoming meetings
-    path("meetings/", views.upcoming_meetings, name="upcoming_meetings"),
+    # Role sign-up page
+    path("signups/", views.role_signups, name="role_signups"),
     # Role signups
     path(
         "role/<int:role_id>/signup-form/",
@@ -11,7 +11,7 @@ urlpatterns = [
         name="signup_role_form",
     ),
     path("role/<int:role_id>/toggle/", views.toggle_role, name="toggle_role"),
-    path("role/<int:role_id>/note/", views.save_role_note, name="save_role_note"),
+    path("role/<int:role_id>/edit/", views.save_role_details, name="save_role_details"),
     # Meeting agenda (public)
     path("meeting/<int:meeting_id>/agenda/", views.meeting_agenda, name="meeting_agenda"),
     path(

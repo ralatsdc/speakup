@@ -53,9 +53,10 @@ def _build_agenda_sections(meeting):
     Roles not assigned to any session are grouped in a final None section.
     """
     roles = list(
-        meeting.roles.select_related("role", "user", "session").order_by(
-            "sort_order", "id"
-        )
+        meeting.roles.filter(role__show_on_agenda=True)
+        .select_related("role", "user", "session", "evaluates", "evaluates__user")
+        .prefetch_related("evaluators", "evaluators__user")
+        .order_by("sort_order", "id")
     )
 
     meeting_sessions = meeting.meeting_sessions.select_related("session").order_by(
@@ -181,43 +182,48 @@ def meeting_agenda_download(request, meeting_id):
             r = p1.add_run("Other")
         r.bold = True
 
-        # Cell 1: two paragraphs per role (name: member, then [L]/[R] time - note)
+        # Cell 1: a main line per role (Role: Member (In Person) N min), with
+        # optional italic follow-up lines for evaluator pairing and notes.
         c = row_cells[1]
         if section["roles"]:
-            first = True
+            first_role = True
             for assignment in section["roles"]:
-                # Role + member paragraph
-                if first:
+                if first_role:
                     p = c.paragraphs[0]
-                    p.paragraph_format.space_before = Pt(6)
-                    first = False
+                    first_role = False
                 else:
                     p = c.add_paragraph()
+                p.paragraph_format.space_before = Pt(6)
+
                 member = (
                     f"{assignment.user.first_name} {assignment.user.last_name}"
                     if assignment.user
                     else "(Open)"
                 )
-                r = p.add_run(f"{assignment.role.name}: ")
-                r.bold = True
-                p.add_run(f"{member}")
+                run = p.add_run(f"{assignment.role.name}: ")
+                run.bold = True
+                p.add_run(member)
 
-                # Detail paragraph: [L]/[R], time in minutes, note
-                # p = c.add_paragraph()
-                if assignment.in_person is True:
-                    p.add_run(" [L]")
-                elif assignment.in_person is False:
-                    p.add_run(" [R]")
+                attendance = assignment.attendance_label()
+                if attendance:
+                    p.add_run(f" ({attendance})")
                 if assignment.time_minutes:
                     p.add_run(f" {assignment.time_minutes} min")
-                if assignment.time_minutes:
-                    p.add_run(f" - {assignment.notes}")
-            p.paragraph_format.space_after = Pt(6)
+
+                for label in (
+                    assignment.evaluating_label(),
+                    assignment.evaluated_by_label(),
+                    assignment.agenda_notes(),
+                ):
+                    if label:
+                        c.add_paragraph().add_run(label).italic = True
+
+            c.paragraphs[-1].paragraph_format.space_after = Pt(6)
         elif session and not session.takes_roles:
             p = c.paragraphs[0]
             p.paragraph_format.space_before = Pt(6)
             p.paragraph_format.space_after = Pt(6)
-            p.add_run("Break")
+            p.add_run(section["note"] or "Break")
 
     buffer = io.BytesIO()
     doc.save(buffer)
@@ -232,19 +238,27 @@ def meeting_agenda_download(request, meeting_id):
     return response
 
 
-def upcoming_meetings(request):
-    """Homepage: shows upcoming meetings with their role assignments."""
+def role_signups(request):
+    """Role sign-up page: upcoming meetings with their role tables. Logged-in
+    members claim or drop roles here; anonymous visitors see a read-only
+    roster."""
     now = timezone.now()
     meetings_qs = (
         Meeting.objects.filter(date__gte=now)
         .order_by("date")
-        .prefetch_related("roles", "roles__role", "roles__user")
+        .prefetch_related(
+            "roles",
+            "roles__role",
+            "roles__user",
+            "roles__evaluates__user",
+            "roles__evaluators__user",
+        )
     )
 
     paginator = Paginator(meetings_qs, 10)
     page = paginator.get_page(request.GET.get("page"))
 
-    return render(request, "meetings/upcoming.html", {"meetings": page})
+    return render(request, "meetings/signups.html", {"meetings": page})
 
 
 def _role_row_response(request, assignment, triggers=None):
@@ -255,6 +269,30 @@ def _role_row_response(request, assignment, triggers=None):
     if triggers:
         response["HX-Trigger"] = json.dumps(triggers)
     return response
+
+
+def _apply_signup_fields(assignment, request):
+    """Apply the member-entered fields from a sign-up or edit POST onto the
+    assignment: attendance mode, notes, and — for speech roles — Pathways
+    path/level/project. Shared so sign-up and edit stay consistent."""
+    in_person = request.POST.get("in_person")
+    if in_person == "true":
+        assignment.in_person = True
+    elif in_person == "false":
+        assignment.in_person = False
+    else:
+        # The dialog requires it, but fall back to the meeting-type
+        # template's expected mode if the field is somehow missing.
+        assignment.in_person = _template_in_person(assignment)
+
+    assignment.notes = request.POST.get("notes", "").strip()
+
+    # Pathways details only apply to speech roles.
+    if assignment.role.shows_pathways_fields:
+        assignment.pathways_path = request.POST.get("pathways_path", "").strip()
+        level = request.POST.get("pathways_level", "").strip()
+        assignment.pathways_level = int(level) if level.isdigit() else None
+        assignment.pathways_project = request.POST.get("pathways_project", "").strip()
 
 
 def _template_in_person(assignment):
@@ -276,14 +314,30 @@ def _template_in_person(assignment):
 
 @login_required
 def signup_role_form(request, role_id):
-    """HTMX endpoint: render the role sign-up dialog for an open role."""
+    """HTMX endpoint: render the role dialog. For an open role it's a sign-up
+    form that claims the role; for an assigned role it's an edit form (same
+    fields) that updates attendance/notes/Pathways for the assignee or an
+    officer."""
     assignment = get_object_or_404(MeetingRole, id=role_id)
+    is_edit = assignment.user is not None
+    if is_edit:
+        default_in_person = (
+            assignment.in_person
+            if assignment.in_person is not None
+            else _template_in_person(assignment)
+        )
+        form_action = reverse("save_role_details", args=[assignment.id])
+    else:
+        default_in_person = _template_in_person(assignment)
+        form_action = reverse("toggle_role", args=[assignment.id])
     return render(
         request,
         "meetings/partials/signup_dialog.html",
         {
             "assignment": assignment,
-            "default_in_person": _template_in_person(assignment),
+            "is_edit": is_edit,
+            "form_action": form_action,
+            "default_in_person": default_in_person,
             "pathways_paths": MeetingRole.PATHWAYS_PATHS,
             "pathways_levels": MeetingRole.PATHWAYS_LEVELS,
         },
@@ -342,28 +396,7 @@ def toggle_role(request, role_id):
             )
 
         assignment.user = request.user
-
-        # Attendance mode: the dialog requires it, but fall back to the
-        # meeting-type template's expected mode if the field is somehow missing.
-        in_person = request.POST.get("in_person")
-        if in_person == "true":
-            assignment.in_person = True
-        elif in_person == "false":
-            assignment.in_person = False
-        else:
-            assignment.in_person = _template_in_person(assignment)
-
-        assignment.notes = request.POST.get("notes", "").strip()
-
-        # Pathways details only apply to speech roles.
-        if assignment.role.shows_pathways_fields:
-            assignment.pathways_path = request.POST.get("pathways_path", "").strip()
-            level = request.POST.get("pathways_level", "").strip()
-            assignment.pathways_level = int(level) if level.isdigit() else None
-            assignment.pathways_project = request.POST.get(
-                "pathways_project", ""
-            ).strip()
-
+        _apply_signup_fields(assignment, request)
         assignment.save()
         return _role_row_response(request, assignment, {"closeModal": True})
 
@@ -374,20 +407,19 @@ def toggle_role(request, role_id):
 
 @login_required
 @require_POST
-def save_role_note(request, role_id):
-    """HTMX endpoint: update the notes on a role assignment (officer or assignee only)."""
+def save_role_details(request, role_id):
+    """HTMX endpoint: edit an assigned role's attendance, notes, and Pathways
+    (assignee or officer only). Uses the same fields and dialog as sign-up."""
     assignment = get_object_or_404(MeetingRole, id=role_id)
 
     can_edit = request.user.is_officer or (assignment.user == request.user)
     if not can_edit:
-        return HttpResponseForbidden("You do not have permission to edit this note.")
+        return HttpResponseForbidden("You do not have permission to edit this role.")
 
-    assignment.notes = request.POST.get("note_content", "").strip()
+    _apply_signup_fields(assignment, request)
     assignment.save()
 
-    return render(
-        request, "meetings/partials/role_row.html", {"assignment": assignment}
-    )
+    return _role_row_response(request, assignment, {"closeModal": True})
 
 
 def checkin_kiosk(request):

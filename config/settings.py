@@ -118,8 +118,8 @@ AUTH_PASSWORD_VALIDATORS = [
     },
 ]
 
-LOGIN_REDIRECT_URL = "/meetings/"
-LOGOUT_REDIRECT_URL = "/"
+LOGIN_REDIRECT_URL = "role_signups"
+LOGOUT_REDIRECT_URL = "landing"
 
 
 # --- i18n ----------------------------------------------------------------

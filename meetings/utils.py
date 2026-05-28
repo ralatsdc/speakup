@@ -65,7 +65,7 @@ def send_meeting_reminders(meeting):
                 f"We still have open roles for the meeting on {meeting.date.strftime('%A, %B %d')}!\n\n"
                 f"Can you take one of these?\n"
                 f"{role_list}\n\n"
-                f"Click here to sign up instantly: {domain}{reverse('upcoming_meetings')}\n"
+                f"Click here to sign up instantly: {domain}{reverse('role_signups')}\n"
                 f"View the full agenda: {domain}{reverse('meeting_agenda', args=[meeting.id])}"
             )
             messages.append((subject, body, sender, [member.email]))

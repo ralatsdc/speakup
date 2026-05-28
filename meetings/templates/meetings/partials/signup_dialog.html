@@ -1,10 +1,12 @@
 <!-- meetings/templates/meetings/partials/signup_dialog.html -->
-<!-- Loaded by HTMX into #signupModalContent (the .modal-content div). -->
-<form hx-post="{% url 'toggle_role' assignment.id %}"
+<!-- Loaded by HTMX into #signupModalContent (the .modal-content div). Serves
+     both sign-up (open role -> toggle_role) and edit (assigned role ->
+     save_role_details); form_action and is_edit come from signup_role_form. -->
+<form hx-post="{{ form_action }}"
       hx-target="#role-row-{{ assignment.id }}"
       hx-swap="outerHTML">
     <div class="modal-header">
-        <h5 class="modal-title">Sign Up: {{ assignment.role.name }}</h5>
+        <h5 class="modal-title">{% if is_edit %}Edit{% else %}Sign Up{% endif %}: {{ assignment.role.name }}</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
     </div>
     <div class="modal-body">
@@ -39,7 +41,7 @@
             <select class="form-select" id="pathways-path-{{ assignment.id }}" name="pathways_path">
                 <option value="">-- Select path --</option>
                 {% for value, label in pathways_paths %}
-                <option value="{{ value }}">{{ label }}</option>
+                <option value="{{ value }}" {% if value == assignment.pathways_path %}selected{% endif %}>{{ label }}</option>
                 {% endfor %}
             </select>
         </div>
@@ -49,7 +51,7 @@
                 <select class="form-select" id="pathways-level-{{ assignment.id }}" name="pathways_level">
                     <option value="">--</option>
                     {% for value, label in pathways_levels %}
-                    <option value="{{ value }}">{{ label }}</option>
+                    <option value="{{ value }}" {% if value == assignment.pathways_level %}selected{% endif %}>{{ label }}</option>
                     {% endfor %}
                 </select>
             </div>
@@ -64,6 +66,6 @@
     </div>
     <div class="modal-footer">
         <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
-        <button type="submit" class="btn btn-primary">Sign Up</button>
+        <button type="submit" class="btn btn-primary">{% if is_edit %}Save{% else %}Sign Up{% endif %}</button>
     </div>
 </form>
