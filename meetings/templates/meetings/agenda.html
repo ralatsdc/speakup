@@ -55,34 +55,37 @@
                     </thead>
                     <tbody>
                         {% for assignment in section.roles %}
-                            {% if assignment.role.name != "President" %}
                             <tr>
-                                <td class="fw-bold">{{ assignment.role.name }}</td>
+                                <td class="fw-bold">
+                                    {{ assignment.role.name }}
+                                    {% if assignment.time_minutes %}
+                                        <div class="small text-muted fw-normal">{{ assignment.time_minutes }} min</div>
+                                    {% endif %}
+                                </td>
                                 <td>
                                     {% if assignment.user %}
                                         {{ assignment.user.first_name }} {{ assignment.user.last_name }}
-                                        {% if assignment.in_person is not None %}
-                                            <span class="badge rounded-pill {% if assignment.in_person %}bg-success{% else %}bg-secondary{% endif %} ms-1">{% if assignment.in_person %}In Person{% else %}Remote{% endif %}</span>
-                                        {% endif %}
-                                        {% if assignment.evaluates and assignment.evaluates.user %}
-                                            <div class="small text-muted">evaluating {{ assignment.evaluates.user.first_name }} {{ assignment.evaluates.user.last_name }}</div>
-                                        {% endif %}
-                                        {% with evaluator=assignment.evaluators.first %}
-                                            {% if evaluator and evaluator.user %}
-                                                <div class="small text-muted">evaluator: {{ evaluator.user.first_name }} {{ evaluator.user.last_name }}</div>
+                                        {% with attendance=assignment.attendance_label %}
+                                            {% if attendance %}
+                                                <span class="badge rounded-pill {% if assignment.in_person %}bg-success{% else %}bg-secondary{% endif %} ms-1">{{ attendance }}</span>
                                             {% endif %}
+                                        {% endwith %}
+                                        {% with evaluating=assignment.evaluating_label %}
+                                            {% if evaluating %}<div class="small text-muted">{{ evaluating }}</div>{% endif %}
+                                        {% endwith %}
+                                        {% with evaluated_by=assignment.evaluated_by_label %}
+                                            {% if evaluated_by %}<div class="small text-muted">{{ evaluated_by }}</div>{% endif %}
                                         {% endwith %}
                                     {% else %}
                                         <span class="text-muted fst-italic">(Open)</span>
                                     {% endif %}
                                 </td>
                                 <td>
-                                    {% if assignment.notes %}
-                                        <em>{{ assignment.notes }}</em>
-                                    {% endif %}
+                                    {% with notes=assignment.agenda_notes %}
+                                        {% if notes %}<em>{{ notes }}</em>{% endif %}
+                                    {% endwith %}
                                 </td>
                             </tr>
-                            {% endif %}
                         {% endfor %}
                     </tbody>
                 </table>

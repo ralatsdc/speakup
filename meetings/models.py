@@ -31,6 +31,11 @@ class Role(models.Model):
     )
     points = models.IntegerField(default=1, help_text="Points for difficulty/effort")
     time_minutes = models.PositiveIntegerField(default=0, help_text="Expected duration in minutes")
+    show_on_agenda = models.BooleanField(
+        default=True,
+        help_text="Uncheck to keep this role off the published agenda "
+        "(web page and Word download) and the sign-up page, e.g. President.",
+    )
     guidance_document = models.FileField(
         upload_to="role_guides/",
         blank=True,
@@ -240,6 +245,50 @@ class MeetingRole(models.Model):
             raise ValidationError(
                 {"evaluates": "The target row's role is not an evaluated role."}
             )
+
+    def attendance_label(self):
+        """'In Person' / 'Remote' / '' — shared by the web and Word agendas."""
+        if self.in_person is True:
+            return "In Person"
+        if self.in_person is False:
+            return "Remote"
+        return ""
+
+    def pathways_label(self):
+        """Speaker's Pathways summary, e.g. 'Presentation Mastery L2,
+        "Project Title"'. Empty parts are omitted; returns '' if none set."""
+        parts = []
+        if self.pathways_path:
+            label = self.pathways_path
+            if self.pathways_level:
+                label += f" L{self.pathways_level}"
+            parts.append(label)
+        if self.pathways_project:
+            parts.append(f'"{self.pathways_project}"')
+        return ", ".join(parts)
+
+    def agenda_notes(self):
+        """Notes-column text for the agenda: Pathways summary and the speech
+        notes joined by an em dash, whichever are present."""
+        pathways = self.pathways_label()
+        if pathways and self.notes:
+            return f"{pathways} — {self.notes}"
+        return pathways or self.notes
+
+    def evaluating_label(self):
+        """For an evaluator row, 'evaluating <speaker>'; '' otherwise."""
+        if self.evaluates_id and self.evaluates.user:
+            u = self.evaluates.user
+            return f"evaluating {u.first_name} {u.last_name}"
+        return ""
+
+    def evaluated_by_label(self):
+        """For an evaluated row, 'evaluator: <name>'; '' otherwise."""
+        evaluator = self.evaluators.first()
+        if evaluator and evaluator.user:
+            u = evaluator.user
+            return f"evaluator: {u.first_name} {u.last_name}"
+        return ""
 
     def __str__(self):
         assigned = self.user.username if self.user else "OPEN"

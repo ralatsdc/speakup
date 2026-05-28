@@ -3,10 +3,10 @@
 {% block content %}
 <div class="row">
     <div class="col-12">
-        <h1 class="mb-4">Upcoming Meetings</h1>
-        
+        <h1 class="mb-4">Sign Up for Roles</h1>
+
         {% if not meetings %}
-            <div class="alert alert-info">No upcoming meetings scheduled. Check back soon!</div>
+            <div class="alert alert-info">No upcoming meetings to sign up for. Check back soon!</div>
         {% endif %}
 
         {% for meeting in meetings %}
@@ -26,13 +26,13 @@
                     <thead class="table-light">
                         <tr>
                             <th scope="col" style="width: 30%;">Role</th>
-                            <th scope="col" style="width: 50%;">Member</th>
-                            <th scope="col" style="width: 20%;">Status</th>
+                            <th scope="col" style="width: 35%;">Status</th>
+                            <th scope="col" style="width: 35%;">Notes</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for assignment in meeting.roles.all %}
-                            {% if assignment.role.name != "President" %}
+                            {% if assignment.role.show_on_agenda %}
                             {% include 'meetings/partials/role_row.html' with assignment=assignment %}
                             {% endif %}
                         {% endfor %}

@@ -73,12 +73,12 @@ class UpcomingMeetingsViewTest(TestCase):
         self.user = User.objects.create_user(username="testuser", email="testuser@example.com", password="testpass")
 
     def test_anonymous_access(self):
-        response = self.client.get(reverse("upcoming_meetings"))
+        response = self.client.get(reverse("role_signups"))
         self.assertEqual(response.status_code, 200)
 
     def test_authenticated_access(self):
         self.client.login(username="testuser", email="testuser@example.com", password="testpass")
-        response = self.client.get(reverse("upcoming_meetings"))
+        response = self.client.get(reverse("role_signups"))
         self.assertEqual(response.status_code, 200)
 
 
@@ -274,6 +274,78 @@ class ToggleRoleViewTest(TestCase):
         self.assertEqual(speech.pathways_path, "")
         self.assertIsNone(speech.pathways_level)
         self.assertEqual(speech.pathways_project, "")
+
+    # --- Editing an assigned role (same dialog/fields as sign-up) ---
+
+    def test_dialog_is_edit_mode_for_assigned_role(self):
+        speech = self._speech_assignment(
+            user=self.user,
+            in_person=False,
+            notes="The Power of Pause",
+            pathways_path="Presentation Mastery",
+            pathways_level=2,
+            pathways_project="Effective Body Language",
+        )
+        self.client.login(username="member1", email="member1@example.com", password="testpass")
+        response = self.client.get(reverse("signup_role_form", args=[speech.id]))
+        # Edit framing, posts to the edit endpoint, current values preselected.
+        self.assertContains(response, "Edit:")
+        self.assertContains(response, reverse("save_role_details", args=[speech.id]))
+        self.assertContains(response, "The Power of Pause")
+        self.assertContains(response, 'value="Presentation Mastery" selected')
+
+    def test_edit_updates_attendance_notes_and_pathways(self):
+        speech = self._speech_assignment(
+            user=self.user, in_person=True, notes="Old title",
+        )
+        self.client.login(username="member1", email="member1@example.com", password="testpass")
+        response = self.client.post(
+            reverse("save_role_details", args=[speech.id]),
+            {
+                "in_person": "false",
+                "notes": "New title",
+                "pathways_path": "Engaging Humor",
+                "pathways_level": "3",
+                "pathways_project": "Know Your Sense of Humor",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        speech.refresh_from_db()
+        self.assertFalse(speech.in_person)
+        self.assertEqual(speech.notes, "New title")
+        self.assertEqual(speech.pathways_path, "Engaging Humor")
+        self.assertEqual(speech.pathways_level, 3)
+        self.assertEqual(speech.pathways_project, "Know Your Sense of Humor")
+        # The user is unchanged — editing must not drop the role.
+        self.assertEqual(speech.user, self.user)
+
+    def test_edit_forbidden_for_non_assignee_non_officer(self):
+        self.assignment.user = self.user2
+        self.assignment.save()
+        self.client.login(username="member1", email="member1@example.com", password="testpass")
+        response = self.client.post(
+            reverse("save_role_details", args=[self.assignment.id]),
+            {"in_person": "true", "notes": "hijack"},
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assignment.refresh_from_db()
+        self.assertEqual(self.assignment.notes, "")
+
+    def test_officer_can_edit_others_role(self):
+        officer = User.objects.create_user(
+            username="officer1", email="officer1@example.com",
+            password="testpass", is_officer=True,
+        )
+        self.assignment.user = self.user2
+        self.assignment.save()
+        self.client.login(username="officer1", email="officer1@example.com", password="testpass")
+        self.client.post(
+            reverse("save_role_details", args=[self.assignment.id]),
+            {"in_person": "true", "notes": "Officer note"},
+        )
+        self.assignment.refresh_from_db()
+        self.assertEqual(self.assignment.notes, "Officer note")
+        self.assertEqual(self.assignment.user, self.user2)
 
 
 class CheckinKioskViewTest(TestCase):
@@ -1156,3 +1228,187 @@ class MemberActivityReportTest(TestCase):
         response = self.client.get(reverse("admin:members_user_changelist"))
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Member activity report")
+
+
+class MeetingRoleAgendaLabelTest(TestCase):
+    """The label helpers that the web and Word agendas share."""
+
+    def setUp(self):
+        self.role = Role.objects.create(name="Speaker", shows_pathways_fields=True)
+        self.meeting = Meeting.objects.create(date=timezone.now(), theme="Leadership")
+        self.user = User.objects.create_user(
+            username="alice", password="pass", email="alice@example.com",
+            first_name="Alice", last_name="Smith",
+        )
+        self.assignment = MeetingRole.objects.create(
+            meeting=self.meeting, role=self.role, user=self.user, sort_order=0
+        )
+
+    def test_attendance_label(self):
+        self.assertEqual(self.assignment.attendance_label(), "")
+        self.assignment.in_person = True
+        self.assertEqual(self.assignment.attendance_label(), "In Person")
+        self.assignment.in_person = False
+        self.assertEqual(self.assignment.attendance_label(), "Remote")
+
+    def test_pathways_label_omits_missing_parts(self):
+        self.assertEqual(self.assignment.pathways_label(), "")
+        self.assignment.pathways_path = "Presentation Mastery"
+        self.assignment.pathways_level = 2
+        self.assignment.pathways_project = "Project Title"
+        self.assertEqual(
+            self.assignment.pathways_label(),
+            'Presentation Mastery L2, "Project Title"',
+        )
+        self.assignment.pathways_project = ""
+        self.assertEqual(self.assignment.pathways_label(), "Presentation Mastery L2")
+
+    def test_agenda_notes_joins_pathways_and_notes(self):
+        self.assignment.pathways_path = "Presentation Mastery"
+        self.assignment.pathways_level = 2
+        self.assignment.notes = "My speech"
+        self.assertEqual(
+            self.assignment.agenda_notes(), "Presentation Mastery L2 — My speech"
+        )
+        self.assignment.pathways_path = ""
+        self.assignment.pathways_level = None
+        self.assertEqual(self.assignment.agenda_notes(), "My speech")
+
+    def test_evaluator_pairing_labels(self):
+        evaluator_role = Role.objects.create(name="Evaluator", is_evaluator_role=True)
+        bob = User.objects.create_user(
+            username="bob", password="pass", email="bob@example.com",
+            first_name="Bob", last_name="Jones",
+        )
+        evaluator = MeetingRole.objects.create(
+            meeting=self.meeting, role=evaluator_role, user=bob,
+            evaluates=self.assignment, sort_order=1,
+        )
+        self.assertEqual(evaluator.evaluating_label(), "evaluating Alice Smith")
+        self.assertEqual(self.assignment.evaluated_by_label(), "evaluator: Bob Jones")
+        # Non-paired rows return empty strings.
+        self.assertEqual(self.assignment.evaluating_label(), "")
+        self.assertEqual(evaluator.evaluated_by_label(), "")
+
+
+class AgendaViewTest(TestCase):
+    """show_on_agenda filtering and rendering across both renderers."""
+
+    def setUp(self):
+        self.client = Client()
+        self.meeting = Meeting.objects.create(date=timezone.now(), theme="Leadership")
+        self.speaker_role = Role.objects.create(name="Speaker")
+        self.president_role = Role.objects.create(
+            name="President", show_on_agenda=False
+        )
+        self.speaker = User.objects.create_user(
+            username="alice", password="pass", email="alice@example.com",
+            first_name="Alice", last_name="Smith",
+        )
+        self.president = User.objects.create_user(
+            username="pat", password="pass", email="pat@example.com",
+            first_name="Pat", last_name="Prez",
+        )
+        MeetingRole.objects.create(
+            meeting=self.meeting, role=self.speaker_role, user=self.speaker,
+            in_person=True, time_minutes=7, notes="My speech", sort_order=0,
+        )
+        MeetingRole.objects.create(
+            meeting=self.meeting, role=self.president_role, user=self.president,
+            sort_order=1,
+        )
+
+    def test_build_sections_excludes_hidden_roles(self):
+        from .views import _build_agenda_sections
+
+        roles = [r for s in _build_agenda_sections(self.meeting) for r in s["roles"]]
+        names = {r.role.name for r in roles}
+        self.assertIn("Speaker", names)
+        self.assertNotIn("President", names)
+
+    def test_web_agenda_hides_president_shows_details(self):
+        response = self.client.get(
+            reverse("meeting_agenda", args=[self.meeting.id])
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Alice Smith")
+        self.assertContains(response, "In Person")
+        self.assertContains(response, "7 min")
+        self.assertNotContains(response, "Pat Prez")
+
+    def test_word_download_renders(self):
+        response = self.client.get(
+            reverse("meeting_agenda_download", args=[self.meeting.id])
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response["Content-Type"],
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        )
+        self.assertTrue(response.content)
+
+
+class SignupPageTest(TestCase):
+    """The /signups/ role sign-up page: Role / Status / Notes columns, with
+    per-role info mirroring the agenda."""
+
+    def setUp(self):
+        self.client = Client()
+        self.meeting = Meeting.objects.create(
+            date=timezone.now() + timezone.timedelta(days=1), theme="Leadership"
+        )
+        self.speaker_role = Role.objects.create(name="Speaker")
+        self.president_role = Role.objects.create(
+            name="President", show_on_agenda=False
+        )
+        # One open Speaker role and one (open) hidden President role.
+        MeetingRole.objects.create(
+            meeting=self.meeting, role=self.speaker_role, time_minutes=7, sort_order=0
+        )
+        MeetingRole.objects.create(
+            meeting=self.meeting, role=self.president_role, sort_order=1
+        )
+        self.member = User.objects.create_user(
+            username="alice", password="pass", email="alice@example.com",
+            first_name="Alice", last_name="Smith",
+        )
+
+    def test_hidden_role_excluded(self):
+        response = self.client.get(reverse("role_signups"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Speaker")
+        self.assertNotContains(response, "President")
+
+    def test_per_role_time_shown(self):
+        response = self.client.get(reverse("role_signups"))
+        self.assertContains(response, "7 min")
+
+    def test_three_columns_without_filled_needed_badges(self):
+        response = self.client.get(reverse("role_signups"))
+        self.assertContains(response, ">Role</th>")
+        self.assertContains(response, ">Status</th>")
+        self.assertContains(response, ">Notes</th>")
+        # The old redundant Status badges are gone.
+        self.assertNotContains(response, "Needed")
+        self.assertNotContains(response, "Filled")
+
+    def test_notes_column_shows_agenda_notes(self):
+        MeetingRole.objects.create(
+            meeting=self.meeting,
+            role=Role.objects.create(name="Toastmaster"),
+            user=self.member,
+            notes="Welcome everyone",
+            sort_order=2,
+        )
+        response = self.client.get(reverse("role_signups"))
+        self.assertContains(response, "Welcome everyone")
+
+    def test_signup_button_for_authenticated_open_role(self):
+        self.client.login(username="alice", password="pass")
+        response = self.client.get(reverse("role_signups"))
+        self.assertContains(response, "Sign Up</button>")
+
+    def test_anonymous_sees_open_placeholder_not_button(self):
+        response = self.client.get(reverse("role_signups"))
+        self.assertContains(response, "-- Open --")
+        self.assertNotContains(response, "Sign Up</button>")

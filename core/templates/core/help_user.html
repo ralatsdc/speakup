@@ -7,8 +7,8 @@
 
 <hr>
 
-<h2>Viewing Upcoming Meetings</h2>
-<p>The <a href="{% url 'upcoming_meetings' %}">home page</a> shows a list of upcoming meetings. Each meeting displays:</p>
+<h2>Viewing Upcoming Meetings and Roles</h2>
+<p>The <a href="{% url 'role_signups' %}">Roles page</a> (the "Roles" link in the menu) shows upcoming meetings. Each meeting displays:</p>
 <ul>
     <li><strong>Date</strong> and <strong>meeting type</strong></li>
     <li><strong>Theme</strong> and <strong>word of the day</strong> (if set)</li>
@@ -21,7 +21,7 @@
 <h2>Signing Up for a Role</h2>
 <p>To volunteer for a meeting role:</p>
 <ol>
-    <li>Find the meeting on the <a href="{% url 'upcoming_meetings' %}">home page</a>.</li>
+    <li>Find the meeting on the <a href="{% url 'role_signups' %}">Roles page</a>.</li>
     <li>Look for roles marked as <strong>Open</strong> (no one assigned yet).</li>
     <li>Click the <strong>"Sign Up"</strong> button next to the role you want.</li>
 </ol>
@@ -95,7 +95,7 @@
         <tr><th>What you want to do</th><th>How to do it</th></tr>
     </thead>
     <tbody>
-        <tr><td>See upcoming meetings</td><td>Go to the <a href="{% url 'upcoming_meetings' %}">home page</a></td></tr>
+        <tr><td>See upcoming meetings</td><td>Go to the <a href="{% url 'role_signups' %}">Roles page</a></td></tr>
         <tr><td>Sign up for a role</td><td>Click <strong>Sign Up</strong> next to an open role</td></tr>
         <tr><td>Drop a role</td><td>Click <strong>Drop</strong> next to your assigned role</td></tr>
         <tr><td>Add speech title / notes</td><td>Click the pencil icon next to your role</td></tr>
