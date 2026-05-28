@@ -1,5 +1,47 @@
 /* Density + sticky-save tweaks for the Meeting change form. */
 
+
+/* --- Unified section headers --------------------------------------------
+   Three specific section labels on this form share one visual treatment:
+     - "Meeting details" — the second fieldset on the change form, marked
+       in MeetingAdmin.fieldsets with the "meeting-admin-section" class.
+     - "Meeting sessions" — the MeetingSessionInline's group header,
+       scoped via the inline's #meeting_sessions-group id so the sibling
+       "Meeting roles" inline (also a .inline-heading) stays Django-default.
+     - Custom session-name headers inside the role inline ("Intro &
+       Warm-up", "Prepared Speeches", ...).
+   For the first two, Django 5.x paints the visible colored bar via
+   var(--header-bg) on multiple selectors (h2.fieldset-heading,
+   h2.inline-heading, and the wrapping <summary> for collapsible
+   fieldsets). Rather than chase each element, override --header-bg in
+   the scope of those two parents — every Django rule that consumes the
+   variable inside them inherits our color automatically. */
+fieldset.meeting-admin-section,
+#meeting_sessions-group {
+    --header-bg: #94b6d2;
+}
+
+/* Strip the ALL-CAPS Django applies to .inline-group h2 (the source of
+   "MEETING SESSIONS"). Scoped so the sibling "MEETING ROLES" inline
+   header keeps its default treatment. */
+#meeting_sessions-group h2 {
+    text-transform: none;
+    letter-spacing: normal;
+}
+
+/* Custom session-name headers in the role inline aren't bound to
+   Django's --header-bg; paint them explicitly to match. */
+.inline-group .meeting-role-session-header {
+    background: #94b6d2;
+    color: #fff;
+    text-transform: none;
+    font-weight: 600;
+    font-size: 1em;
+    padding: 0.45em 0.85em;
+    text-align: left;
+    border-radius: 3px;
+}
+
 /* --- Identity banner ----------------------------------------------------
    Read-only summary at the top of the change form so officers always see
    which meeting they're editing without expanding the (collapsed) details

@@ -208,7 +208,12 @@ class MeetingAdmin(admin.ModelAdmin):
             "fields": ("word_of_the_day",),
         }),
         ("Meeting details", {
-            "classes": ("collapse",),
+            # "meeting-admin-section" is a marker class read by
+            # meeting_change_form.css → "Unified section headers" to
+            # repaint this fieldset's h2 in the lighter banner hue.
+            # The other fieldset on the form (Notes, inside each
+            # MeetingRole row) intentionally stays Django-default.
+            "classes": ("collapse", "meeting-admin-section"),
             "fields": ("meeting_type", "date", "theme", "zoom_link"),
         }),
     )
