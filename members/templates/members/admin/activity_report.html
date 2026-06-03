@@ -1,4 +1,5 @@
 {% extends "admin/base_site.html" %}
+{% load static %}
 
 {% block breadcrumbs %}
     <div class="breadcrumbs">
@@ -11,36 +12,21 @@
 
 {% block extrastyle %}
     {{ block.super }}
+    <link rel="stylesheet" href="{% static 'members/admin/sortable_table.css' %}">
     <style>
-        table#activity-report-table th.sortable {
-            cursor: pointer;
-            user-select: none;
-        }
-        table#activity-report-table th.sortable::after {
-            content: " ↕";
-            opacity: 0.35;
-        }
-        table#activity-report-table th.sort-asc::after { content: " ▲"; opacity: 1; }
-        table#activity-report-table th.sort-desc::after { content: " ▼"; opacity: 1; }
-        .activity-report-presets {
-            margin-bottom: 0.5em;
-        }
+        .activity-report-presets { margin-bottom: 0.5em; }
         .activity-report-presets .preset-label {
             color: var(--body-quiet-color, #666);
             margin-right: 0.5em;
         }
-        .activity-report-presets a {
-            margin-right: 0.4em;
-        }
-        form.activity-report-filter label {
-            margin-right: 0.4em;
-        }
+        .activity-report-presets a { margin-right: 0.4em; }
         form.activity-report-filter .field-row {
             display: inline-flex;
             align-items: center;
             gap: 0.4em;
             margin-right: 1em;
         }
+        #member-filter { padding: 0.3em 0.5em; font: inherit; min-width: 18em; }
     </style>
 {% endblock %}
 
@@ -52,6 +38,7 @@
         {% endfor %}
         <a href="{% url 'admin:members_user_activity_report' %}" class="button">All time</a>
     </div>
+
     <form method="get" class="activity-report-filter" style="margin-bottom: 1em;">
         <span class="field-row">
             <label for="id_start">From:</label>
@@ -61,11 +48,31 @@
             <label for="id_end">To:</label>
             <input type="date" id="id_end" name="end" value="{{ end }}">
         </span>
+        <span class="field-row">
+            <label for="id_taken">Who has</label>
+            <select id="id_taken" name="taken">
+                <option value="yes" {% if selected_taken == "yes" %}selected{% endif %}>taken</option>
+                <option value="no" {% if selected_taken == "no" %}selected{% endif %}>not taken</option>
+            </select>
+            <label for="id_role">role</label>
+            <select id="id_role" name="role">
+                <option value="">— any —</option>
+                {% for role in roles %}
+                    <option value="{{ role.pk }}" {% if selected_role_id == role.pk|stringformat:"s" %}selected{% endif %}>{{ role.name }}</option>
+                {% endfor %}
+            </select>
+        </span>
         <button type="submit" class="button">Filter</button>
         {% if has_filter %}
             <a href="{% url 'admin:members_user_activity_report' %}">Clear</a>
         {% endif %}
     </form>
+
+    <p>
+        <label for="member-filter">Find member:</label>
+        <input type="search" id="member-filter" placeholder="type a name…" autocomplete="off">
+        <span id="member-filter-count" style="color: var(--body-quiet-color, #666);"></span>
+    </p>
 
     <table id="activity-report-table" class="sortable-table">
         <thead>
@@ -83,7 +90,7 @@
                     <td>{{ member.meetings_attended }}</td>
                     <td>{{ member.roles_taken }}</td>
                     <td>
-                        <a href="{% url 'admin:members_user_activity_report_detail' member.pk %}{% if start or end %}?{% if start %}start={{ start }}{% endif %}{% if start and end %}&{% endif %}{% if end %}end={{ end }}{% endif %}{% endif %}">
+                        <a href="{% url 'admin:members_user_activity_report_detail' member.pk %}{% if querystring %}?{{ querystring }}{% endif %}">
                             Details
                         </a>
                     </td>
@@ -96,42 +103,27 @@
         </tbody>
     </table>
 
+    <script src="{% static 'members/admin/sortable_table.js' %}"></script>
     <script>
     (function () {
-        const table = document.getElementById("activity-report-table");
-        if (!table) return;
-        const tbody = table.tBodies[0];
-        const headers = table.querySelectorAll("th.sortable");
-
-        headers.forEach((th, index) => {
-            th.addEventListener("click", () => {
-                const isAsc = th.classList.contains("sort-asc");
-                const direction = isAsc ? -1 : 1;
-                const type = th.dataset.sort;
-
-                headers.forEach(h => h.classList.remove("sort-asc", "sort-desc"));
-                th.classList.add(isAsc ? "sort-desc" : "sort-asc");
-
-                const rows = Array.from(tbody.querySelectorAll("tr"));
-                // "Empty" placeholder rows (single colspan'd cell) shouldn't
-                // get reordered against data rows.
-                if (rows.length <= 1) return;
-
-                rows.sort((a, b) => {
-                    const av = a.children[index].textContent.trim();
-                    const bv = b.children[index].textContent.trim();
-                    if (type === "number") {
-                        return direction * (parseFloat(av) - parseFloat(bv));
-                    }
-                    return direction * av.localeCompare(bv, undefined, {sensitivity: "base"});
-                });
-                rows.forEach(r => tbody.appendChild(r));
-                // Re-apply alternating row classes after reorder.
-                rows.forEach((r, i) => {
-                    r.classList.remove("row1", "row2");
-                    r.classList.add(i % 2 === 0 ? "row1" : "row2");
-                });
+        var input = document.getElementById("member-filter");
+        var table = document.getElementById("activity-report-table");
+        if (!input || !table) return;
+        var counter = document.getElementById("member-filter-count");
+        var tbody = table.tBodies[0];
+        input.addEventListener("input", function () {
+            var q = input.value.trim().toLowerCase();
+            var rows = Array.from(tbody.querySelectorAll("tr"));
+            var shown = 0, total = 0;
+            rows.forEach(function (row) {
+                var cell = row.children[0];
+                if (!cell || row.children.length < 2) return;  // skip placeholder
+                total++;
+                var match = cell.textContent.toLowerCase().indexOf(q) !== -1;
+                row.style.display = match ? "" : "none";
+                if (match) shown++;
             });
+            counter.textContent = q ? shown + " of " + total : "";
         });
     })();
     </script>

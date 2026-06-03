@@ -1,0 +1,11 @@
+/* Click-to-sort table headers, shared by the activity report views. */
+table.sortable-table th.sortable {
+    cursor: pointer;
+    user-select: none;
+}
+table.sortable-table th.sortable::after {
+    content: " \2195"; /* up-down arrow */
+    opacity: 0.35;
+}
+table.sortable-table th.sort-asc::after { content: " \25B2"; opacity: 1; }
+table.sortable-table th.sort-desc::after { content: " \25BC"; opacity: 1; }

@@ -14,14 +14,18 @@ officer/superuser audience already has access — no extra permission flags.
 
 from collections import defaultdict
 from datetime import date, datetime, time, timedelta
+from urllib.parse import urlencode
 
-from django.contrib import admin
+from django.contrib import admin, messages
 from django.contrib.admin.views.decorators import staff_member_required
-from django.db.models import Count, Q
-from django.shortcuts import get_object_or_404, render
+from django.db.models import Count, Max, Q
+from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.utils import timezone
+from django.views.decorators.http import require_POST
 
-from meetings.models import Attendance, MeetingRole
+from meetings.models import Attendance, Meeting, MeetingRole, Role
+from meetings.utils import send_role_invite
 
 from .models import User
 
@@ -110,16 +114,49 @@ def activity_report(request):
         .order_by("first_name", "last_name", "username")
     )
 
+    # Optional "has / has not taken <role>" filter, honoring the date range.
+    # Drives the officer workflow: find who's never done a role, then invite.
+    role_id = request.GET.get("role") or ""
+    taken = request.GET.get("taken") or ""  # "yes" | "no" | ""
+    selected_role = None
+    if role_id and taken in ("yes", "no"):
+        selected_role = Role.objects.filter(pk=role_id, show_on_agenda=True).first()
+    if selected_role:
+        took = MeetingRole.objects.filter(role=selected_role, user__isnull=False)
+        if start_dt:
+            took = took.filter(meeting__date__gte=start_dt)
+        if end_dt:
+            took = took.filter(meeting__date__lt=end_dt)
+        took_ids = took.values_list("user_id", flat=True).distinct()
+        members = (members.filter(id__in=took_ids) if taken == "yes"
+                   else members.exclude(id__in=took_ids))
+
     context = {
         **admin.site.each_context(request),
         "title": "Member activity report",
         "members": members,
+        "roles": Role.objects.filter(show_on_agenda=True).order_by("name"),
+        "selected_role_id": str(selected_role.pk) if selected_role else "",
+        "selected_taken": taken if selected_role else "",
         "presets": _range_presets(timezone.localdate()),
         "start": start.isoformat() if start else "",
         "end": end.isoformat() if end else "",
-        "has_filter": bool(start or end),
+        "has_filter": bool(start or end or selected_role),
+        "querystring": _querystring(start, end),
     }
     return render(request, "members/admin/activity_report.html", context)
+
+
+def _querystring(start, end, **extra):
+    """Build a ?start=&end=... querystring (omitting blanks) for preserving the
+    date range across links/forms."""
+    params = {}
+    if start:
+        params["start"] = start.isoformat() if hasattr(start, "isoformat") else start
+    if end:
+        params["end"] = end.isoformat() if hasattr(end, "isoformat") else end
+    params.update({k: v for k, v in extra.items() if v})
+    return urlencode(params)
 
 
 @staff_member_required
@@ -157,22 +194,76 @@ def activity_report_detail(request, user_id):
         by_meeting.values(), key=lambda r: r["meeting"].date, reverse=True
     )
 
-    # Per-role count breakdown.
-    role_counts = (
-        role_qs.values("role__name")
-        .annotate(count=Count("id"))
-        .order_by("-count", "role__name")
-    )
+    # Per-role breakdown across EVERY sign-up-able role (not just ones taken),
+    # with how many times and when last taken — so officers can spot gaps and
+    # invite. Roles never taken show count 0 / last "—".
+    taken = {
+        row["role"]: row
+        for row in role_qs.values("role").annotate(
+            count=Count("id"), last_taken=Max("meeting__date")
+        )
+    }
+    role_breakdown = []
+    for role in Role.objects.filter(show_on_agenda=True).order_by("name"):
+        agg = taken.get(role.id)
+        role_breakdown.append({
+            "role": role,
+            "count": agg["count"] if agg else 0,
+            "last_taken": agg["last_taken"] if agg else None,
+        })
+
+    # Invites are pointless with no upcoming meeting to sign up for.
+    upcoming_exists = Meeting.objects.filter(date__gte=timezone.now()).exists()
 
     context = {
         **admin.site.each_context(request),
         "title": f"Activity: {member}",
         "member": member,
         "meeting_rows": meeting_rows,
-        "role_counts": role_counts,
+        "role_breakdown": role_breakdown,
+        "upcoming_exists": upcoming_exists,
         "total_meetings": sum(1 for r in meeting_rows if r["attended"]),
         "total_roles": role_qs.count(),
         "start": start.isoformat() if start else "",
         "end": end.isoformat() if end else "",
+        "querystring": _querystring(start, end),
     }
     return render(request, "members/admin/activity_report_detail.html", context)
+
+
+@require_POST
+@staff_member_required
+def activity_report_invite(request, user_id, role_id):
+    """Email a member inviting them to sign up for a role at an upcoming
+    meeting, then return to their detail page with a status message."""
+    member = get_object_or_404(User, pk=user_id)
+    role = get_object_or_404(Role, pk=role_id, show_on_agenda=True)
+
+    back = reverse("admin:members_user_activity_report_detail", args=[member.pk])
+    qs = _querystring(request.POST.get("start"), request.POST.get("end"))
+    back = f"{back}?{qs}" if qs else back
+
+    if not Meeting.objects.filter(date__gte=timezone.now()).exists():
+        messages.error(request, "No upcoming meetings to invite for.")
+        return redirect(back)
+    if not member.email:
+        messages.error(request, f"{member} has no email address on file.")
+        return redirect(back)
+
+    try:
+        n = send_role_invite(member, role)
+    except Exception:
+        messages.error(request, f"Could not send the invite to {member}.")
+        return redirect(back)
+
+    if n:
+        messages.success(
+            request,
+            f"Invited {member} to take {role.name} "
+            f"({n} upcoming meeting{'s' if n != 1 else ''} with it open).")
+    else:
+        messages.success(
+            request,
+            f"Invited {member} to take {role.name} (linked to the sign-up "
+            f"page; no upcoming meeting currently has it open).")
+    return redirect(back)

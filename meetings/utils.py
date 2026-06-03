@@ -248,3 +248,74 @@ def send_first_time_role_email(meeting_role):
         RoleGuideEmailLog.objects.filter(user=user, role=role).delete()
         raise
     return True
+
+
+def upcoming_meetings_with_open_role(role, now=None):
+    """Upcoming meetings (date >= now) that have an unfilled slot for ``role``,
+    earliest first. Used to make a role invite actionable."""
+    from django.utils import timezone
+    from .models import Meeting
+
+    now = now or timezone.now()
+    return (
+        Meeting.objects.filter(date__gte=now, roles__role=role,
+                               roles__user__isnull=True)
+        .distinct()
+        .order_by("date")
+    )
+
+
+def send_role_invite(member, role, now=None):
+    """Invite ``member`` to sign up for ``role`` at an upcoming meeting.
+
+    Lists the upcoming meetings that currently have that role open; if none do
+    (but meetings are still scheduled), falls back to a generic nudge toward
+    the sign-up page. Returns the number of open upcoming meetings listed.
+
+    The caller is responsible for not inviting when there are no upcoming
+    meetings at all (the button is disabled in that case).
+    """
+    if not member.email:
+        return 0
+
+    sender = settings.DEFAULT_FROM_EMAIL
+    domain = settings.SITE_URL
+    signups_url = f"{domain}{reverse('role_signups')}"
+    open_meetings = list(upcoming_meetings_with_open_role(role, now=now))
+
+    if open_meetings:
+        when = "\n".join(
+            f"- {m.date.strftime('%A, %B %d')}"
+            f" ({m.meeting_type.name if m.meeting_type else 'meeting'})"
+            for m in open_meetings
+        )
+        opening = (
+            f"We'd love for you to take the **{role.name}** role at an upcoming "
+            f"meeting. It's currently open at:\n\n{when}\n\n"
+        )
+    else:
+        opening = (
+            f"We'd love for you to take the **{role.name}** role at an upcoming "
+            f"meeting.\n\n"
+        )
+
+    subject = f"Invitation: take the {role.name} role at SpeakUp"
+    body = (
+        f"Hi {member.first_name or member.username},\n\n"
+        f"{opening}"
+        f"You can sign up here: {signups_url}\n\n"
+        f"Taking on a role is a great way to practice — and we'd love to see "
+        f"you up there.\n\n"
+        f"SpeakUp Team"
+    )
+
+    email = EmailMessage(subject=subject, body=body, from_email=sender,
+                         to=[member.email])
+    try:
+        email.send(fail_silently=False)
+    except Exception:
+        logger.exception(
+            "Failed to send role invite to user=%s role=%s", member, role
+        )
+        raise
+    return len(open_meetings)
