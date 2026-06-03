@@ -221,14 +221,19 @@ that failure class. Do not revert `-c` to `db-to-sqlite`.
 `--natural-foreign` so the round trip is symmetric: it serializes the SQLite
 rows, then `migrate`/`flush`/`loaddata` into Railway (`flush` clears existing
 data and re-seeds content types + permissions via `post_migrate`). Because it
-**overwrites all production data**, it prompts for confirmation first. Use it to
-publish data prepared locally — e.g. after `manage.py import_open_roles
---commit`.
+**overwrites all production data**, it is guarded: it serializes and runs
+`migrate --check` *before* touching Railway (aborting if local migrations
+aren't all applied on prod), prompts for confirmation, then takes a **full
+safety dump of Railway right before the flush**. If `loaddata` fails, Railway
+is left empty but the script prints the exact `pg.sh -r <safety-dump>` recovery
+command instead of falsely reporting success. Use it to publish data prepared
+locally — e.g. after `manage.py import_open_roles --commit`.
 
-Caveat: `migrate` applies *local* migrations, so the local schema may lead
-prod. That is fine for additive changes, but if a local migration removes or
-renames a column still present on Railway, `dumpdata` against Railway will
-fail until prod catches up.
+Caveat: `migrate --check` only catches local being *behind* prod. It cannot
+detect prod being *ahead* — if Railway has a `NOT NULL` column this branch's
+schema lacks, `loaddata` fails on that constraint (the SQLite dump omits the
+column). The safety dump makes that recoverable, but the real fix is to bring
+the branch's migrations up to production's schema before pushing.
 
 Verify a generated file:
 

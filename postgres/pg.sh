@@ -361,6 +361,13 @@ elif [[ $convert -eq 1 ]]; then
 elif [[ $upload != "" ]]; then
     # Push a local SQLite database up to Railway — the inverse of -c. Mirrors
     # the same dumpdata exclusions/natural keys so the round trip is symmetric.
+    #
+    # Safety: everything that can fail without touching Railway runs FIRST
+    # (serialize, schema check). Immediately before the destructive flush we
+    # take a full safety dump, so any failure is one `-r` away from recovery.
+    # set -e aborts on the first unexpected error; steps that need a custom
+    # message are guarded explicitly.
+    set -e
     if [[ ! -f "$upload" ]]; then
         echo "SQLite database not found: $upload"
         exit 1
@@ -371,31 +378,67 @@ elif [[ $upload != "" ]]; then
     data_path="$SCRIPT_DIR/_upload_data.json"
     pg_url="postgresql://$PGUSER:$PGPASSWORD@$PGHOST:$PGPORT/$PGDATABASE"
 
-    # Pushing replaces ALL Railway data — confirm before the destructive step.
-    echo "About to OVERWRITE Railway database '$PGDATABASE' on $PGHOST"
-    echo "with all data from: $sqlite_abs"
-    echo "This DELETES every existing row in Railway before loading."
-    read -rp "Proceed? [y/N] " answer
-    if [[ ! "$answer" =~ ^[Yy]$ ]]; then
-        echo "Aborted."
-        exit 0
-    fi
-
-    # Serialize local rows. Exclude what migrate/flush re-seed; natural FKs so
-    # references to contenttypes/permissions re-resolve on the target.
+    # 1. Serialize local rows (non-destructive; fail fast if the DB is bad).
+    #    Exclude what migrate/flush re-seed; natural FKs so references to
+    #    contenttypes/permissions re-resolve on the target.
     DATABASE_URL="sqlite:///$sqlite_abs" "$py_path" "$mang_path" dumpdata \
         --natural-foreign \
         --exclude contenttypes --exclude auth.permission \
         --exclude sessions.session --exclude admin.logentry \
         -o "$data_path"
 
-    # Ensure the schema is current, clear existing data (flush re-seeds
-    # contenttypes + permissions via post_migrate), then load the rows.
+    # 2. Schema guard: abort if Railway has migrations this branch lacks (prod
+    #    is AHEAD). That is exactly the drift that makes loaddata fail on a
+    #    column the SQLite dump can't supply — catch it BEFORE flushing. (Local
+    #    being ahead is fine: step 5's migrate applies those to Railway.)
+    ahead="$(DATABASE_URL="$pg_url" "$py_path" "$mang_path" shell -c '
+from django.db import connections
+from django.db.migrations.loader import MigrationLoader
+loader = MigrationLoader(connections["default"])
+extra = sorted(set(loader.applied_migrations) - set(loader.disk_migrations))
+print(";".join(f"{a}.{n}" for a, n in extra))
+' 2>/dev/null | tail -1)"
+    if [[ -n "$ahead" ]]; then
+        rm -f "$data_path"
+        echo "Schema mismatch: Railway has migrations this branch lacks:"
+        echo "  $ahead"
+        echo "Bring the branch up to production's schema first. No change was made."
+        exit 1
+    fi
+
+    # 3. Confirm — the next steps overwrite all Railway data.
+    echo "About to OVERWRITE Railway database '$PGDATABASE' on $PGHOST"
+    echo "with all data from: $sqlite_abs"
+    echo "This DELETES every existing row in Railway before loading."
+    read -rp "Proceed? [y/N] " answer
+    if [[ ! "$answer" =~ ^[Yy]$ ]]; then
+        rm -f "$data_path"
+        echo "Aborted."
+        exit 0
+    fi
+
+    # 4. Safety net: full dump of Railway *before* the flush, so a failed load
+    #    is recoverable with `pg.sh -r`. Named like a normal dump so GFS prunes it.
+    safety_dump="$SCRIPT_DIR/dump-$(date "+%Y-%m-%dT%H:%M:%S").tar"
+    echo "Backing up Railway to $(basename "$safety_dump") before overwrite..."
+    pg_dump -h "$PGHOST" -p "$PGPORT" -d "$PGDATABASE" -U "$PGUSER" -w -F t > "$safety_dump"
+
+    # 5. Apply migrations (no-op after the check), clear data (flush re-seeds
+    #    contenttypes + permissions via post_migrate), then load. A loaddata
+    #    failure leaves Railway flushed, so point at the safety dump rather than
+    #    falsely reporting success.
     DATABASE_URL="$pg_url" "$py_path" "$mang_path" migrate --noinput
     DATABASE_URL="$pg_url" "$py_path" "$mang_path" flush --noinput
-    DATABASE_URL="$pg_url" "$py_path" "$mang_path" loaddata "$data_path"
+    if ! DATABASE_URL="$pg_url" "$py_path" "$mang_path" loaddata "$data_path"; then
+        echo "" >&2
+        echo "loaddata FAILED — Railway is now empty. Restore the safety dump:" >&2
+        echo "    bash pg.sh -r $(basename "$safety_dump")" >&2
+        rm -f "$data_path"
+        exit 1
+    fi
     rm -f "$data_path"
     echo "Railway database restored from $(basename "$sqlite_abs")."
+    echo "Safety backup kept at $(basename "$safety_dump")."
 elif [[ $prune -eq 1 ]]; then
     prune_backups
 elif [[ $test_restore -eq 1 ]]; then
