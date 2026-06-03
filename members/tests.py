@@ -90,12 +90,16 @@ class OfficersGroupSeededTest(TestCase):
         ):
             self.assertIn(codename, codenames)
 
-    def test_officers_group_does_not_grant_user_management(self):
+    def test_officers_group_manages_users_except_delete(self):
         group = Group.objects.get(name=OFFICERS_GROUP_NAME)
         codenames = set(group.permissions.values_list("codename", flat=True))
-        # User management stays superuser-only.
-        for codename in ("add_user", "change_user", "delete_user"):
-            self.assertNotIn(codename, codenames)
+        # Officers can add/change/view members...
+        for codename in ("add_user", "change_user", "view_user"):
+            self.assertIn(codename, codenames)
+        # ...but not delete users, nor touch groups/permissions.
+        self.assertNotIn("delete_user", codenames)
+        self.assertNotIn("change_group", codenames)
+        self.assertNotIn("change_permission", codenames)
 
 
 class OfficerSyncTest(TestCase):
@@ -285,3 +289,57 @@ class ActivityReportTest(TestCase):
         resp = self.client.get(url)
         self.assertFalse(resp.context["upcoming_exists"])
         self.assertIn("disabled", resp.content.decode())
+
+
+class OfficerUserAdminGuardTest(TestCase):
+    """Officers can manage members, but the admin blocks every privilege-
+    escalation path: privilege fields, officer promotion, and CSV import."""
+
+    def setUp(self):
+        from django.contrib.admin.sites import AdminSite
+        from django.test import RequestFactory
+
+        from .admin import CustomUserAdmin
+
+        self.admin = CustomUserAdmin(User, AdminSite())
+        self.rf = RequestFactory()
+        self.officer = User.objects.create_user(
+            "off", "off@example.com", "pw", is_officer=True)
+        self.superuser = User.objects.create_superuser(
+            "root", "root@example.com", "pw")
+        self.target = User.objects.create_user("m", "m@example.com", "pw")
+
+    def _req(self, user):
+        req = self.rf.get("/")
+        req.user = user
+        return req
+
+    @staticmethod
+    def _fields(fieldsets):
+        return {f for _, opts in fieldsets for f in opts["fields"]}
+
+    def test_officer_change_form_hides_privilege_fields(self):
+        fields = self._fields(self.admin.get_fieldsets(self._req(self.officer), self.target))
+        for f in ("is_staff", "is_superuser", "is_officer", "groups", "user_permissions"):
+            self.assertNotIn(f, fields)
+        # but can still manage member data, including activation
+        for f in ("is_active", "is_guest", "email", "mentor"):
+            self.assertIn(f, fields)
+
+    def test_superuser_change_form_keeps_privilege_fields(self):
+        fields = self._fields(self.admin.get_fieldsets(self._req(self.superuser), self.target))
+        self.assertIn("is_superuser", fields)
+        self.assertIn("is_officer", fields)
+
+    def test_officer_cannot_promote_officers(self):
+        actions = self.admin.get_actions(self._req(self.officer))
+        self.assertNotIn("make_officer", actions)
+        self.assertNotIn("remove_officer", actions)
+        self.assertIn("make_guest", actions)  # roster actions still available
+
+    def test_superuser_can_promote_officers(self):
+        self.assertIn("make_officer", self.admin.get_actions(self._req(self.superuser)))
+
+    def test_csv_import_is_superuser_only(self):
+        self.assertFalse(self.admin.has_import_permission(self._req(self.officer)))
+        self.assertTrue(self.admin.has_import_permission(self._req(self.superuser)))

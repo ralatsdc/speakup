@@ -123,6 +123,38 @@ class CustomUserAdmin(ImportExportModelAdmin, UserAdmin):
     # Filters on the right sidebar (Find guests quickly!)
     list_filter = ("is_guest", "is_officer", "is_active")
 
+    # Fields a non-superuser (officer) may edit when changing a user: the
+    # member roster minus every privilege control. is_staff / is_superuser /
+    # is_officer / groups / user_permissions are absent, so an officer can
+    # manage members but can never grant admin access or escalate. Fields not
+    # in the form are left untouched on save, so existing flags are preserved.
+    officer_fieldsets = (
+        (None, {"fields": ("username", "password")}),
+        ("Personal info", {"fields": ("first_name", "last_name", "email")}),
+        ("Status", {"fields": ("is_active",)}),
+        ("Toastmasters Profile", {
+            "fields": ("is_guest", "join_date", "notes", "phone_number", "mentor")}),
+    )
+
+    def get_fieldsets(self, request, obj=None):
+        # The add form (obj is None) is already privilege-free; superusers keep
+        # the full set; officers editing an existing user get the safe set.
+        if obj is not None and not request.user.is_superuser:
+            return self.officer_fieldsets
+        return super().get_fieldsets(request, obj)
+
+    def get_actions(self, request):
+        # Promoting/demoting officers grants admin access — superuser-only.
+        actions = super().get_actions(request)
+        if not request.user.is_superuser:
+            actions.pop("make_officer", None)
+            actions.pop("remove_officer", None)
+        return actions
+
+    def has_import_permission(self, request):
+        # CSV import can set is_staff / is_officer, so it stays superuser-only.
+        return request.user.is_superuser
+
     # Search bar capability
     search_fields = ("username", "first_name", "last_name", "email")
 

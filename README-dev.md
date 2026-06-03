@@ -139,13 +139,63 @@ The largest app. Contains the data model for meeting templates and instances, pl
 
 ## User Permission Model
 
-| Flag | Effect |
-|---|---|
-| `is_staff` | Access to Django admin; sees "Admin" link in navbar |
-| `is_superuser` | Bypasses all permission checks (unlimited role sign-ups) |
-| `is_officer` | Can edit notes on any role; can sign up for multiple roles per meeting |
-| `is_guest` | Cannot sign up for roles; excluded from some email audiences |
-| `is_active` | Inactive users are excluded from email sends and attendance lists |
+Admin access is two layers: **(1) can you get in** — `is_active` + `is_staff` —
+and **(2) what can you touch** — standard Django model permissions, or the
+superuser bypass. There are no custom `has_*_permission` overrides in the admin;
+it is plain Django permissions plus `is_superuser`.
+
+| Flag | Admin effect | Domain effect |
+|---|---|---|
+| `is_active` | Must be true to log in at all (admin or site) | Excluded from email sends and attendance lists |
+| `is_staff` | The gate into `/admin/`. With it you get in, but only see models you have permissions for (an empty index otherwise) | Sees the "Admin" link in the navbar |
+| model perms | add/change/delete/view per model decide what appears and what you can do | — |
+| `is_superuser` | Bypasses every permission check — sees and does everything, incl. user management | Unlimited role sign-ups |
+| `is_officer` | Derives admin access (see below) | Can edit notes on any role; can sign up for multiple roles per meeting |
+| `is_guest` | None — not an admin flag | Cannot sign up for roles; excluded from some email audiences |
+
+### `is_officer` → `is_staff` + the Officers group
+
+`is_officer` is the single source of truth for "club officer." A `post_save`
+handler (`members/signals.py`) keeps two derived facts in lockstep:
+
+1. **`is_staff`** is set whenever `is_officer` is true (cleared when false,
+   except for superusers) — so officers can enter the admin.
+2. The user is added to the **"Officers" group**, seeded across two migrations:
+   - `members/0003_seed_officers_group` — add/change/delete/view on
+     **meetings** (Meeting, MeetingRole, MeetingSession, MeetingType,
+     MeetingTypeItem, MeetingTypeSession, Attendance, Role, Session) and
+     **communications** (Announcement).
+   - `members/0005_officers_manage_users` — add/change/**view** on
+     `members.User` (the member roster). **No `delete_user`.**
+
+   **Excluded on purpose:** `auth.*` (Groups, Permissions) entirely, plus —
+   for `members.User` — `delete` and every privilege field.
+
+### Officers manage members, but cannot escalate
+
+Because the Officers group has `change_user`, `CustomUserAdmin`
+(`members/admin.py`) closes the privilege-escalation paths a non-superuser
+would otherwise have:
+
+- **Change form** (`get_fieldsets`): officers see username/email/name,
+  `is_active`, and the Toastmasters profile — but **not** `is_staff`,
+  `is_superuser`, `is_officer`, `groups`, or `user_permissions` (fields absent
+  from the form are left untouched on save).
+- **Actions** (`get_actions`): the *Make/Remove Officer* bulk actions are
+  hidden from non-superusers (they grant admin access). Make/Remove Guest and
+  Active stay available.
+- **CSV import** (`has_import_permission`): superuser-only, because the import
+  resource can set `is_staff`/`is_officer`.
+
+Net: officers can create, edit (incl. activate/deactivate), and view members,
+but only **superusers** can hard-delete users or hand out admin/superuser/
+officer status.
+
+So an **officer** sees Meetings, Announcements, and the member roster (no
+delete), plus the two `is_staff`-gated custom pages (member **activity
+report**, email **review**) — but not Groups/Permissions and no privilege
+fields. A plain **member** (no `is_staff`) can't open the admin at all. A
+**superuser** sees everything.
 
 ## Email
 
