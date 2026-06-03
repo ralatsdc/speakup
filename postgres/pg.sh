@@ -24,6 +24,8 @@ OPTIONS
 
     -r    Restore from an archive
 
+    -u    Restore Railway from a SQLite database (push local data up)
+
     -p    Prune old backups (GFS rotation)
 
     -t    Test-restore the latest dump (requires Docker Desktop)
@@ -44,9 +46,10 @@ EOF
 dump=0
 convert=0
 restore=""
+upload=""
 prune=0
 test_restore=0
-while getopts ":dcr:pthex" opt; do
+while getopts ":dcr:u:pthex" opt; do
     case $opt in
         d)
             dump=1
@@ -56,6 +59,9 @@ while getopts ":dcr:pthex" opt; do
             ;;
         r)
 	    restore="${OPTARG}"
+            ;;
+        u)
+            upload="${OPTARG}"
             ;;
         p)
             prune=1
@@ -86,11 +92,11 @@ while getopts ":dcr:pthex" opt; do
     esac
 done
 
-if [[ $dump -eq 0 && $convert -eq 0 && $restore == "" && $prune -eq 0 && $test_restore -eq 0 ]]; then
-    echo "Must select dump, convert, restore, prune, or test"
+if [[ $dump -eq 0 && $convert -eq 0 && $restore == "" && $upload == "" && $prune -eq 0 && $test_restore -eq 0 ]]; then
+    echo "Must select dump, convert, restore, upload, prune, or test"
     exit 1
-elif [[ $(( $dump + $convert + $prune + $test_restore + $([[ $restore != "" ]] && echo 1 || echo 0) )) -gt 1 ]]; then
-    echo "Can only select one of dump, convert, restore, prune, or test"
+elif [[ $(( $dump + $convert + $prune + $test_restore + $([[ $restore != "" ]] && echo 1 || echo 0) + $([[ $upload != "" ]] && echo 1 || echo 0) )) -gt 1 ]]; then
+    echo "Can only select one of dump, convert, restore, upload, prune, or test"
     exit 1
 fi
 
@@ -352,6 +358,44 @@ elif [[ $convert -eq 1 ]]; then
     pushd ..
     ln -fs postgres/$db_name db.sqlite3
     popd
+elif [[ $upload != "" ]]; then
+    # Push a local SQLite database up to Railway — the inverse of -c. Mirrors
+    # the same dumpdata exclusions/natural keys so the round trip is symmetric.
+    if [[ ! -f "$upload" ]]; then
+        echo "SQLite database not found: $upload"
+        exit 1
+    fi
+    sqlite_abs="$(cd "$(dirname "$upload")" && pwd)/$(basename "$upload")"
+    py_path="$SCRIPT_DIR/../.venv/bin/python"
+    mang_path="$SCRIPT_DIR/../manage.py"
+    data_path="$SCRIPT_DIR/_upload_data.json"
+    pg_url="postgresql://$PGUSER:$PGPASSWORD@$PGHOST:$PGPORT/$PGDATABASE"
+
+    # Pushing replaces ALL Railway data — confirm before the destructive step.
+    echo "About to OVERWRITE Railway database '$PGDATABASE' on $PGHOST"
+    echo "with all data from: $sqlite_abs"
+    echo "This DELETES every existing row in Railway before loading."
+    read -rp "Proceed? [y/N] " answer
+    if [[ ! "$answer" =~ ^[Yy]$ ]]; then
+        echo "Aborted."
+        exit 0
+    fi
+
+    # Serialize local rows. Exclude what migrate/flush re-seed; natural FKs so
+    # references to contenttypes/permissions re-resolve on the target.
+    DATABASE_URL="sqlite:///$sqlite_abs" "$py_path" "$mang_path" dumpdata \
+        --natural-foreign \
+        --exclude contenttypes --exclude auth.permission \
+        --exclude sessions.session --exclude admin.logentry \
+        -o "$data_path"
+
+    # Ensure the schema is current, clear existing data (flush re-seeds
+    # contenttypes + permissions via post_migrate), then load the rows.
+    DATABASE_URL="$pg_url" "$py_path" "$mang_path" migrate --noinput
+    DATABASE_URL="$pg_url" "$py_path" "$mang_path" flush --noinput
+    DATABASE_URL="$pg_url" "$py_path" "$mang_path" loaddata "$data_path"
+    rm -f "$data_path"
+    echo "Railway database restored from $(basename "$sqlite_abs")."
 elif [[ $prune -eq 1 ]]; then
     prune_backups
 elif [[ $test_restore -eq 1 ]]; then

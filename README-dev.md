@@ -179,17 +179,19 @@ connection details from `postgres/.env` (`PGHOST`, `PGPORT`, `PGDATABASE`,
 | `-d` | Dump Railway to a timestamped `postgres/dump-<ts>.tar` (`pg_dump`, custom format) |
 | `-c` | Convert Railway into a local SQLite DB and point `db.sqlite3` at it |
 | `-r <file>` | Restore a `.tar` dump back into PostgreSQL (`pg_restore -c`) |
+| `-u <file>` | Push a local SQLite DB up into Railway (the inverse of `-c`), with confirmation |
 | `-p` | Prune old dumps via GFS (Grandfather-Father-Son) rotation, with confirmation |
 | `-h` | Help; `-e`/`-x` add `set -e` / `set -x` |
 
-Exactly one of `-d`, `-c`, `-r`, `-p` per invocation. Run from the `postgres/`
-directory:
+Exactly one of `-d`, `-c`, `-r`, `-u`, `-p` per invocation. Run from the
+`postgres/` directory:
 
 ```bash
 cd postgres
-bash pg.sh -d        # nightly backup
-bash pg.sh -c        # refresh local db.sqlite3 from prod
-bash pg.sh -p        # tidy old dumps
+bash pg.sh -d                 # nightly backup
+bash pg.sh -c                 # refresh local db.sqlite3 from prod
+bash pg.sh -u ../db.sqlite3   # push local db.sqlite3 up to prod (overwrites!)
+bash pg.sh -p                 # tidy old dumps
 ```
 
 A launchd agent (`postgres/com.user.pgdump.plist`) runs `pg.sh -d` daily at
@@ -212,6 +214,16 @@ normal ORM use, so the app still ran — but Django runs `PRAGMA
 foreign_key_check` at the end of *every schema-altering migration*, which then
 aborted with `foreign key mismatch`. Letting Django build the schema removes
 that failure class. Do not revert `-c` to `db-to-sqlite`.
+
+### Pushing a local SQLite DB up with `-u`
+
+`-u` is the inverse of `-c`, using the same `dumpdata` exclusions and
+`--natural-foreign` so the round trip is symmetric: it serializes the SQLite
+rows, then `migrate`/`flush`/`loaddata` into Railway (`flush` clears existing
+data and re-seeds content types + permissions via `post_migrate`). Because it
+**overwrites all production data**, it prompts for confirmation first. Use it to
+publish data prepared locally — e.g. after `manage.py import_open_roles
+--commit`.
 
 Caveat: `migrate` applies *local* migrations, so the local schema may lead
 prod. That is fine for additive changes, but if a local migration removes or
