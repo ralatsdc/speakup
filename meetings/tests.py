@@ -66,6 +66,14 @@ class MeetingSignalTest(TestCase):
         meeting.save()
         self.assertEqual(meeting.roles.count(), 4)
 
+    def test_raw_save_does_not_populate(self):
+        # loaddata saves with raw=True; the template rows are already in the
+        # fixture, so the signal must NOT re-create them (else dumpdata|loaddata
+        # via pg.sh -c/-u would double every meeting's roles).
+        meeting = Meeting(meeting_type=self.meeting_type, date=timezone.now())
+        meeting.save_base(raw=True)
+        self.assertEqual(meeting.roles.count(), 0)
+
 
 class UpcomingMeetingsViewTest(TestCase):
     def setUp(self):
