@@ -4,11 +4,13 @@ from django.contrib import admin
 from django.urls import path, include
 
 from core import views as core_views
+from communications.views import email_review
 
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("accounts/", include("django.contrib.auth.urls")),
     path("help/", core_views.help_page, name="help"),
+    path("email/review/", email_review, name="email_review"),
     path("", core_views.landing_page, name="landing"),
     path("", include("meetings.urls")),
 ]

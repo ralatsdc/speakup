@@ -1,4 +1,8 @@
+from urllib.parse import urlencode
+
 from django.contrib import admin, messages
+from django.http import HttpResponseRedirect
+from django.urls import reverse
 from django.utils import timezone
 
 from .models import Announcement
@@ -24,15 +28,10 @@ class AnnouncementAdmin(admin.ModelAdmin):
             )
 
     def response_change(self, request, obj):
-        """Handle the 'Send Announcement' button on the change form."""
+        """The 'Send Announcement' button routes to the review-before-send page
+        instead of dispatching immediately."""
         if "_send-announcement" in request.POST:
-            count = obj.send()
-            obj.sent_at = timezone.now()
-            obj.save()
-            self.message_user(
-                request,
-                f"Sent '{obj.subject}' to {count} recipients.",
-                messages.SUCCESS,
-            )
-            return self.response_post_save_change(request, obj)
+            url = reverse("email_review") + "?" + urlencode(
+                {"workflow": "announcement", "announcement": obj.id})
+            return HttpResponseRedirect(url)
         return super().response_change(request, obj)

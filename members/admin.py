@@ -6,11 +6,7 @@ from import_export.admin import ImportExportModelAdmin
 
 from .models import User
 from .resources import UserResource
-from .views import (
-    activity_report,
-    activity_report_detail,
-    activity_report_invite,
-)
+from .views import activity_report, activity_report_detail
 
 DEFAULT_PASSWORD = "Speak-Up-2026"
 
@@ -147,11 +143,6 @@ class CustomUserAdmin(ImportExportModelAdmin, UserAdmin):
                 "activity-report/<int:user_id>/",
                 self.admin_site.admin_view(activity_report_detail),
                 name="members_user_activity_report_detail",
-            ),
-            path(
-                "activity-report/<int:user_id>/invite/<int:role_id>/",
-                self.admin_site.admin_view(activity_report_invite),
-                name="members_user_activity_report_invite",
             ),
         ]
         return custom + urls
