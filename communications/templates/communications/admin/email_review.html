@@ -1,0 +1,117 @@
+{% extends "admin/base_site.html" %}
+
+{% block breadcrumbs %}
+    <div class="breadcrumbs">
+        <a href="{% url 'admin:index' %}">Home</a>
+        &rsaquo; <a href="{{ back_url }}">Back</a>
+        &rsaquo; Review &amp; send
+    </div>
+{% endblock %}
+
+{% block extrastyle %}
+    {{ block.super }}
+    <style>
+        .email-review .group { border: 1px solid var(--hairline-color, #ddd);
+            border-radius: 4px; padding: 1em 1.2em; margin-bottom: 1.2em; }
+        .email-review .group h2 { margin-top: 0; }
+        .email-review label { display: block; font-weight: 600; margin: 0.6em 0 0.2em; }
+        .email-review input[type=text], .email-review textarea {
+            width: 100%; box-sizing: border-box; font: inherit; padding: 0.4em; }
+        .email-review textarea { min-height: 9em; }
+        .email-review .placeholders { color: var(--body-quiet-color, #666);
+            font-size: 0.9em; margin: 0.3em 0; }
+        .email-review .placeholders code { background: var(--darkened-bg, #f2f2f2);
+            padding: 0 0.3em; border-radius: 3px; }
+        .email-review .preview { background: var(--darkened-bg, #f8f8f8);
+            border: 1px solid var(--hairline-color, #eee); border-radius: 4px;
+            padding: 0.6em 0.8em; margin-top: 0.6em; }
+        .email-review .preview .psubj { font-weight: 600; }
+        .email-review .preview .pbody { white-space: pre-wrap; margin-top: 0.4em; }
+        .email-review details { margin-top: 0.6em; }
+        .email-review .actions { margin-top: 1em; }
+        .email-review .actions .cancel { margin-left: 0.6em; }
+    </style>
+{% endblock %}
+
+{% block content %}
+<div class="email-review">
+    {% if total %}
+        <p><strong>{{ total }}</strong> email{{ total|pluralize }} will be sent. Review
+        below — edit the shared subject/body if you like; the preview updates as you type.</p>
+
+        <form method="post" action="{% url 'email_review' %}">
+            {% csrf_token %}
+            {% for k, v in params.items %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+            <input type="hidden" name="back" value="{{ back_url }}">
+
+            {% for group in draft.groups %}
+                <div class="group" data-key="{{ group.key }}"
+                     data-context="{{ group.sample_context_json }}">
+                    <h2>{{ group.label }}</h2>
+
+                    <label for="subj_{{ group.key }}">Subject</label>
+                    <input type="text" id="subj_{{ group.key }}" name="subject_{{ group.key }}"
+                           value="{{ group.subject }}">
+
+                    <label for="body_{{ group.key }}">Body</label>
+                    <textarea id="body_{{ group.key }}" name="body_{{ group.key }}">{{ group.body }}</textarea>
+
+                    {% if group.placeholders %}
+                        <p class="placeholders">Placeholders:
+                            {% for ph in group.placeholders %}<code>{% templatetag openbrace %}{{ ph }}{% templatetag closebrace %}</code> {% endfor %}
+                        </p>
+                    {% endif %}
+
+                    <div class="preview">
+                        <div class="muted" style="font-size:0.85em;color:var(--body-quiet-color,#666);">
+                            Preview{% if group.sample_name %} — for {{ group.sample_name }}{% endif %}</div>
+                        <div class="psubj" id="psubj_{{ group.key }}">{{ group.preview_subject }}</div>
+                        <div class="pbody" id="pbody_{{ group.key }}">{{ group.preview_body }}</div>
+                    </div>
+
+                    <details>
+                        <summary>{{ group.recipients|length }} recipient{{ group.recipients|length|pluralize }}</summary>
+                        <ul>
+                            {% for r in group.recipients %}
+                                <li>{{ r.name }} &lt;{{ r.email }}&gt;</li>
+                            {% endfor %}
+                        </ul>
+                    </details>
+                </div>
+            {% endfor %}
+
+            <div class="actions">
+                <button type="submit" class="default">Send</button>
+                <button type="submit" name="_cancel" value="1" class="cancel">Cancel</button>
+            </div>
+        </form>
+    {% else %}
+        <p><em>No emails to send.</em></p>
+        <p><a href="{{ back_url }}" class="button">Back</a></p>
+    {% endif %}
+</div>
+
+<script>
+(function () {
+    function subst(template, ctx) {
+        return template.replace(/\{(\w+)\}/g, function (m, k) {
+            return Object.prototype.hasOwnProperty.call(ctx, k) ? ctx[k] : "";
+        });
+    }
+    document.querySelectorAll(".email-review .group").forEach(function (g) {
+        var key = g.dataset.key, ctx = {};
+        try { ctx = JSON.parse(g.dataset.context || "{}"); } catch (e) {}
+        var subj = document.getElementById("subj_" + key);
+        var body = document.getElementById("body_" + key);
+        var psubj = document.getElementById("psubj_" + key);
+        var pbody = document.getElementById("pbody_" + key);
+        function update() {
+            psubj.textContent = subst(subj.value, ctx);
+            pbody.textContent = subst(body.value, ctx);
+        }
+        subj.addEventListener("input", update);
+        body.addEventListener("input", update);
+    });
+})();
+</script>
+{% endblock %}

@@ -53,14 +53,8 @@
                     <td>{% if row.last_taken %}{{ row.last_taken|date:"Y-m-d" }}{% else %}&mdash;{% endif %}</td>
                     <td class="invite-cell">
                         {% if upcoming_exists %}
-                            <form method="post"
-                                  action="{% url 'admin:members_user_activity_report_invite' member.pk row.role.pk %}"
-                                  onsubmit="return confirm('Send an invite to {{ member|escapejs }} to take {{ row.role.name|escapejs }}?');">
-                                {% csrf_token %}
-                                {% if start %}<input type="hidden" name="start" value="{{ start }}">{% endif %}
-                                {% if end %}<input type="hidden" name="end" value="{{ end }}">{% endif %}
-                                <button type="submit" class="button">Invite</button>
-                            </form>
+                            <a class="button"
+                               href="{% url 'email_review' %}?workflow=invite&amp;member={{ member.pk }}&amp;role={{ row.role.pk }}&amp;back={{ request.get_full_path|urlencode }}">Invite</a>
                         {% else %}
                             <button type="button" class="button" disabled title="No upcoming meetings">Invite</button>
                         {% endif %}

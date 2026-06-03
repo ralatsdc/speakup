@@ -10,169 +10,55 @@ from members.models import User
 logger = logging.getLogger(__name__)
 
 
-def send_meeting_reminders(meeting):
-    """
-    Sends two types of emails:
-    1. To assigned people: "Don't forget your role!"
-    2. To unassigned people: "We need help!"
-    """
-    messages = []
-    sender = settings.DEFAULT_FROM_EMAIL
-    domain = settings.SITE_URL
+def send_meeting_reminders(meeting, edits=None):
+    """Send role reminders (to assignees) and open-role nudges (to everyone
+    unassigned). ``edits`` optionally overrides the per-group subject/body
+    templates (supplied by the review-before-send page)."""
+    from .emails import build_reminder_draft
+    from communications.emails import render_messages
 
-    # Remind people who already have a role
-    assignments = meeting.roles.filter(user__isnull=False)
-    for assignment in assignments:
-        user = assignment.user
-        if not user.email:
-            continue
-
-        if assignment.in_person is True:
-            mode = " (In Person)"
-        elif assignment.in_person is False:
-            mode = " (Remote)"
-        else:
-            mode = ""
-
-        subject = f"Reminder: You are {assignment.role.name} on {meeting.date.date()}"
-        body = (
-            f"Hi {user.first_name},\n\n"
-            f"This is a reminder that you are signed up as **{assignment.role.name}**{mode} "
-            f"for the meeting on {meeting.date.strftime('%A, %B %d')}.\n\n"
-            f"Please arrive by {meeting.date.strftime('%I:%M %p')}.\n"
-            f"Theme: {meeting.theme}\n\n"
-            f"See the agenda here: {domain}{reverse('meeting_agenda', args=[meeting.id])}"
-        )
-        messages.append((subject, body, sender, [user.email]))
-
-    # Ask unassigned members to fill open roles
-    open_roles = meeting.roles.filter(user__isnull=True)
-    if open_roles.exists():
-        assigned_user_ids = assignments.values_list("user_id", flat=True)
-        unassigned_members = User.objects.filter(
-            is_active=True, is_guest=False
-        ).exclude(id__in=assigned_user_ids)
-
-        role_list = "\n".join([f"- {r.role.name}" for r in open_roles])
-
-        for member in unassigned_members:
-            if not member.email:
-                continue
-
-            subject = f"Roles needed for {meeting.date.date()}"
-            body = (
-                f"Hi {member.first_name},\n\n"
-                f"We still have open roles for the meeting on {meeting.date.strftime('%A, %B %d')}!\n\n"
-                f"Can you take one of these?\n"
-                f"{role_list}\n\n"
-                f"Click here to sign up instantly: {domain}{reverse('role_signups')}\n"
-                f"View the full agenda: {domain}{reverse('meeting_agenda', args=[meeting.id])}"
-            )
-            messages.append((subject, body, sender, [member.email]))
-
+    messages = render_messages(build_reminder_draft(meeting)["groups"], edits)
     try:
-        return send_mass_mail(tuple(messages), fail_silently=False)
+        return send_mass_mail(messages, fail_silently=False)
     except Exception:
         logger.exception("Failed to send meeting reminders for %s", meeting)
         raise
 
 
-def send_meeting_feedback(meeting):
-    """
-    Sends two types of post-meeting emails, each at most once per recipient:
-    1. Role feedback to members who have 'admin_notes' on their role. Re-sent
-       only when the notes are edited after a previous send.
-    2. Thank-you emails to guests who attended (once per guest).
-    """
+def send_meeting_feedback(meeting, edits=None):
+    """Send role feedback (members whose ``admin_notes`` is new/changed) and
+    guest thank-yous (once per guest), then stamp what went out so repeats
+    don't re-send. ``edits`` optionally overrides the subject/body templates.
+    Returns ``(feedback_count, guest_count)``."""
     from django.utils import timezone
+    from .emails import build_feedback_draft
     from .models import Attendance, MeetingRole
+    from communications.emails import render_messages
 
-    messages = []
-    sender = settings.DEFAULT_FROM_EMAIL
-    meeting_date = meeting.date.strftime("%A, %B %d")
-
-    # Role feedback for members whose admin_notes is new or changed since the
-    # last send. feedback_sent_notes holds the content last emailed.
-    roles_to_stamp = []
-    roles_with_feedback = meeting.roles.exclude(admin_notes="").exclude(
-        user__isnull=True
-    )
-
-    count = 0
-    for assignment in roles_with_feedback:
-        user = assignment.user
-        if not user.email:
-            continue
-        if assignment.admin_notes == assignment.feedback_sent_notes:
-            continue
-
-        subject = f"Feedback: Your role as {assignment.role.name}"
-        body = (
-            f"Hi {user.first_name},\n\n"
-            f"Thank you for taking the role of **{assignment.role.name}** at our meeting on {meeting_date}.\n\n"
-            f"Here are the notes/feedback regarding your role:\n"
-            f"----------------------------------------------------\n"
-            f"{assignment.admin_notes}\n"
-            f"----------------------------------------------------\n\n"
-            f"See you at the next meeting!\n"
-            f"SpeakUp Team"
-        )
-
-        messages.append((subject, body, sender, [user.email]))
-        roles_to_stamp.append(assignment)
-        count += 1
-
-    # Thank-you emails to guests not yet thanked
-    attendances_to_stamp = []
-    guest_attendances = meeting.attendances.filter(
-        models.Q(user__is_guest=True) | models.Q(user__isnull=True, guest_email__gt="")
-    ).filter(thank_you_sent_at__isnull=True)
-
-    guest_count = 0
-    for attendance in guest_attendances:
-        if attendance.user:
-            name = attendance.user.first_name
-            email = attendance.user.email
-        else:
-            name = attendance.guest_first_name or "Guest"
-            email = attendance.guest_email
-
-        if not email:
-            continue
-
-        subject = f"Thanks for visiting SpeakUp on {meeting_date}!"
-        body = (
-            f"Hi {name},\n\n"
-            f"Thank you for joining us at our meeting on {meeting_date}! "
-            f"We hope you enjoyed the experience.\n\n"
-            f"We'd love to see you again at our next meeting. "
-            f"Feel free to reply to this email if you have any questions.\n\n"
-            f"SpeakUp Team"
-        )
-
-        messages.append((subject, body, sender, [email]))
-        attendances_to_stamp.append(attendance)
-        guest_count += 1
-
+    groups = build_feedback_draft(meeting)["groups"]
+    messages = render_messages(groups, edits)
     try:
-        send_mass_mail(tuple(messages), fail_silently=False)
+        send_mass_mail(messages, fail_silently=False)
     except Exception:
         logger.exception("Failed to send meeting feedback for %s", meeting)
         raise
 
-    # Record what went out, only after a successful batch send, so repeated
-    # button clicks don't re-send the same feedback.
-    if roles_to_stamp:
-        for assignment in roles_to_stamp:
-            assignment.feedback_sent_notes = assignment.admin_notes
-        MeetingRole.objects.bulk_update(roles_to_stamp, ["feedback_sent_notes"])
-    if attendances_to_stamp:
+    # Record what went out, only after a successful batch send.
+    roles = [r["_role"] for g in groups if g["key"] == "feedback"
+             for r in g["recipients"]]
+    attendances = [r["_attendance"] for g in groups if g["key"] == "guests"
+                   for r in g["recipients"]]
+    if roles:
+        for a in roles:
+            a.feedback_sent_notes = a.admin_notes
+        MeetingRole.objects.bulk_update(roles, ["feedback_sent_notes"])
+    if attendances:
         now = timezone.now()
-        for attendance in attendances_to_stamp:
-            attendance.thank_you_sent_at = now
-        Attendance.objects.bulk_update(attendances_to_stamp, ["thank_you_sent_at"])
+        for att in attendances:
+            att.thank_you_sent_at = now
+        Attendance.objects.bulk_update(attendances, ["thank_you_sent_at"])
 
-    return count, guest_count
+    return len(roles), len(attendances)
 
 
 def send_first_time_role_email(meeting_role):
@@ -265,57 +151,25 @@ def upcoming_meetings_with_open_role(role, now=None):
     )
 
 
-def send_role_invite(member, role, now=None):
-    """Invite ``member`` to sign up for ``role`` at an upcoming meeting.
-
-    Lists the upcoming meetings that currently have that role open; if none do
-    (but meetings are still scheduled), falls back to a generic nudge toward
-    the sign-up page. Returns the number of open upcoming meetings listed.
+def send_role_invite(member, role, edits=None, now=None):
+    """Invite ``member`` to sign up for ``role`` at an upcoming meeting. Lists
+    the upcoming meetings that currently have that role open (generic nudge if
+    none do). ``edits`` optionally overrides the subject/body. Returns the
+    number of open upcoming meetings listed.
 
     The caller is responsible for not inviting when there are no upcoming
     meetings at all (the button is disabled in that case).
     """
-    if not member.email:
-        return 0
+    from .emails import build_invite_draft
+    from communications.emails import render_messages
 
-    sender = settings.DEFAULT_FROM_EMAIL
-    domain = settings.SITE_URL
-    signups_url = f"{domain}{reverse('role_signups')}"
-    open_meetings = list(upcoming_meetings_with_open_role(role, now=now))
-
-    if open_meetings:
-        when = "\n".join(
-            f"- {m.date.strftime('%A, %B %d')}"
-            f" ({m.meeting_type.name if m.meeting_type else 'meeting'})"
-            for m in open_meetings
-        )
-        opening = (
-            f"We'd love for you to take the **{role.name}** role at an upcoming "
-            f"meeting. It's currently open at:\n\n{when}\n\n"
-        )
-    else:
-        opening = (
-            f"We'd love for you to take the **{role.name}** role at an upcoming "
-            f"meeting.\n\n"
-        )
-
-    subject = f"Invitation: take the {role.name} role at SpeakUp"
-    body = (
-        f"Hi {member.first_name or member.username},\n\n"
-        f"{opening}"
-        f"You can sign up here: {signups_url}\n\n"
-        f"Taking on a role is a great way to practice — and we'd love to see "
-        f"you up there.\n\n"
-        f"SpeakUp Team"
-    )
-
-    email = EmailMessage(subject=subject, body=body, from_email=sender,
-                         to=[member.email])
+    draft = build_invite_draft(member, role, now=now)
+    messages = render_messages(draft["groups"], edits)
     try:
-        email.send(fail_silently=False)
+        send_mass_mail(messages, fail_silently=False)
     except Exception:
         logger.exception(
             "Failed to send role invite to user=%s role=%s", member, role
         )
         raise
-    return len(open_meetings)
+    return draft["open_count"]

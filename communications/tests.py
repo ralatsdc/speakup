@@ -1,9 +1,119 @@
+from datetime import timedelta
 from unittest.mock import patch
 
+from django.core import mail
 from django.test import TestCase
+from django.urls import reverse
+from django.utils import timezone
 
+from meetings.models import Meeting, MeetingRole, Role
 from members.models import User
 from .models import Announcement
+
+
+class EmailReviewTest(TestCase):
+    """The shared review-before-send gate: GET renders the draft, POST sends
+    (applying any edits) and runs each workflow's post-send hooks."""
+
+    def setUp(self):
+        self.staff = User.objects.create_superuser(
+            "boss", "boss@example.com", "pw")
+        self.client.force_login(self.staff)
+        self.url = reverse("email_review")
+
+    def _meeting(self):
+        role = Role.objects.create(name="Toastmaster")
+        m = Meeting.objects.create(
+            date=timezone.now() + timedelta(days=3), theme="Growth")
+        alice = User.objects.create_user(
+            "alice", "alice@example.com", "pw", first_name="Alice")
+        mr = MeetingRole.objects.create(
+            meeting=m, role=role, user=alice, admin_notes="Well done")
+        MeetingRole.objects.create(meeting=m, role=role, user=None)  # open slot
+        return m, role, alice, mr
+
+    # --- reminders ---
+
+    def test_reminders_get_renders_both_groups(self):
+        m, *_ = self._meeting()
+        resp = self.client.get(self.url, {"workflow": "reminders", "meeting": m.id})
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "Assigned members")
+        self.assertContains(resp, "Open-role nudge")
+
+    def test_reminders_post_applies_edits(self):
+        m, *_ = self._meeting()
+        resp = self.client.post(self.url, {
+            "workflow": "reminders", "meeting": m.id,
+            "subject_assignees": "Custom {role}", "body_assignees": "Hi {first_name}!",
+        })
+        self.assertEqual(resp.status_code, 302)
+        self.assertTrue(any(msg.subject == "Custom Toastmaster" for msg in mail.outbox))
+        self.assertTrue(any("Hi Alice!" in msg.body for msg in mail.outbox))
+
+    # --- feedback ---
+
+    def test_feedback_post_sends_and_stamps(self):
+        m, role, alice, mr = self._meeting()
+        resp = self.client.post(self.url, {"workflow": "feedback", "meeting": m.id})
+        self.assertEqual(resp.status_code, 302)
+        mr.refresh_from_db()
+        self.assertEqual(mr.feedback_sent_notes, "Well done")  # stamped once
+        self.assertTrue(any("Well done" in msg.body for msg in mail.outbox))
+
+    # --- announcement ---
+
+    def test_announcement_post_edits_and_stamps_sent_at(self):
+        ann = Announcement.objects.create(subject="Hi", body="Body", audience="all")
+        resp = self.client.post(self.url, {
+            "workflow": "announcement", "announcement": ann.id,
+            "subject_all": "Edited subject", "body_all": "Edited body",
+        })
+        self.assertEqual(resp.status_code, 302)
+        ann.refresh_from_db()
+        self.assertIsNotNone(ann.sent_at)
+        self.assertTrue(any(msg.subject == "Edited subject" for msg in mail.outbox))
+
+    # --- invite ---
+
+    def test_invite_post_sends(self):
+        role = Role.objects.create(name="Timer")
+        bob = User.objects.create_user("bob", "bob@example.com", "pw", first_name="Bob")
+        m = Meeting.objects.create(date=timezone.now() + timedelta(days=4))
+        MeetingRole.objects.create(meeting=m, role=role, user=None)
+        resp = self.client.post(self.url, {
+            "workflow": "invite", "member": bob.id, "role": role.id})
+        self.assertEqual(resp.status_code, 302)
+        self.assertTrue(mail.outbox)
+        self.assertIn("Timer", mail.outbox[-1].subject)
+        self.assertEqual(mail.outbox[-1].to, ["bob@example.com"])
+
+    # --- guards ---
+
+    def test_cancel_sends_nothing(self):
+        ann = Announcement.objects.create(subject="Hi", body="Body", audience="all")
+        resp = self.client.post(self.url, {
+            "workflow": "announcement", "announcement": ann.id, "_cancel": "1"})
+        self.assertEqual(resp.status_code, 302)
+        self.assertEqual(len(mail.outbox), 0)
+        ann.refresh_from_db()
+        self.assertIsNone(ann.sent_at)
+
+    def test_unknown_workflow_404(self):
+        self.assertEqual(
+            self.client.get(self.url, {"workflow": "bogus"}).status_code, 404)
+
+    def test_invite_off_agenda_role_404(self):
+        pres = Role.objects.create(name="President", show_on_agenda=False)
+        bob = User.objects.create_user("bob", "bob@example.com", "pw")
+        resp = self.client.get(self.url, {
+            "workflow": "invite", "member": bob.id, "role": pres.id})
+        self.assertEqual(resp.status_code, 404)
+
+    def test_requires_staff(self):
+        self.client.logout()
+        resp = self.client.get(self.url, {"workflow": "reminders", "meeting": 1})
+        self.assertIn(resp.status_code, (302, 403))
 
 
 class AnnouncementSendTest(TestCase):

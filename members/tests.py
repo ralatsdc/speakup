@@ -270,36 +270,18 @@ class ActivityReportTest(TestCase):
         # President is off-agenda -> not in the breakdown.
         self.assertNotIn("President", breakdown)
 
-    # --- invite ---
+    # --- invite button (sending happens on the shared review page) ---
 
-    def test_invite_sends_email_listing_open_meeting(self):
+    def test_invite_links_to_review_when_upcoming(self):
         self._upcoming_with_open_tm()
-        url = reverse("admin:members_user_activity_report_invite",
-                      args=[self.bob.pk, self.tm.pk])
-        resp = self.client.post(url)
-        self.assertEqual(resp.status_code, 302)
-        self.assertEqual(len(mail.outbox), 1)
-        msg = mail.outbox[0]
-        self.assertIn("Toastmaster", msg.subject)
-        self.assertEqual(msg.to, [self.bob.email])
-        self.assertIn("signups", msg.body)
+        url = reverse("admin:members_user_activity_report_detail", args=[self.bob.pk])
+        html = self.client.get(url).content.decode()
+        self.assertTrue(self.client.get(url).context["upcoming_exists"])
+        self.assertIn("workflow=invite", html)
+        self.assertIn(f"role={self.tm.pk}", html)
 
-    def test_invite_blocked_when_no_upcoming(self):
-        url = reverse("admin:members_user_activity_report_invite",
-                      args=[self.bob.pk, self.tm.pk])
-        resp = self.client.post(url)
-        self.assertEqual(resp.status_code, 302)
-        self.assertEqual(len(mail.outbox), 0)
-
-    def test_invite_rejects_off_agenda_role(self):
-        self._upcoming_with_open_tm()
-        url = reverse("admin:members_user_activity_report_invite",
-                      args=[self.bob.pk, self.president.pk])
-        resp = self.client.post(url)
-        self.assertEqual(resp.status_code, 404)
-        self.assertEqual(len(mail.outbox), 0)
-
-    def test_invite_requires_post(self):
-        url = reverse("admin:members_user_activity_report_invite",
-                      args=[self.bob.pk, self.tm.pk])
-        self.assertEqual(self.client.get(url).status_code, 405)
+    def test_invite_disabled_without_upcoming(self):
+        url = reverse("admin:members_user_activity_report_detail", args=[self.bob.pk])
+        resp = self.client.get(url)
+        self.assertFalse(resp.context["upcoming_exists"])
+        self.assertIn("disabled", resp.content.decode())

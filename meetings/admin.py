@@ -4,7 +4,8 @@ from django.contrib import admin, messages
 from django.db import models
 from django.db.models import OuterRef, Subquery
 from django.http import HttpResponseRedirect
-from django.urls import path
+from django.urls import path, reverse
+from urllib.parse import urlencode
 
 from .models import (
     Attendance,
@@ -18,7 +19,9 @@ from .models import (
     RoleGuideEmailLog,
     Session,
 )
-from .utils import send_meeting_reminders
+def _review_url(workflow, **params):
+    """URL of the shared review-before-send page for a workflow + target ids."""
+    return reverse("email_review") + "?" + urlencode({"workflow": workflow, **params})
 
 
 @admin.register(Role)
@@ -253,35 +256,10 @@ class MeetingAdmin(admin.ModelAdmin):
         return custom_urls + urls
 
     def process_reminders(self, request, meeting_id):
-        meeting = self.get_object(request, meeting_id)
-        count = send_meeting_reminders(meeting)
-        self.message_user(
-            request, f"Successfully queued {count} reminder emails.", messages.SUCCESS
-        )
-        return HttpResponseRedirect(f"../../{meeting_id}/change/")
+        return HttpResponseRedirect(_review_url("reminders", meeting=meeting_id))
 
     def process_feedback(self, request, meeting_id):
-        from .utils import send_meeting_feedback
-
-        meeting = self.get_object(request, meeting_id)
-        feedback_count, guest_count = send_meeting_feedback(meeting)
-
-        parts = []
-        if feedback_count:
-            parts.append(f"feedback to {feedback_count} members")
-        if guest_count:
-            parts.append(f"thank-you to {guest_count} guests")
-
-        if parts:
-            self.message_user(
-                request, f"Sent {', '.join(parts)}.", messages.SUCCESS
-            )
-        else:
-            self.message_user(
-                request, "No feedback or guest emails to send.", messages.WARNING
-            )
-
-        return HttpResponseRedirect(f"../../{meeting_id}/change/")
+        return HttpResponseRedirect(_review_url("feedback", meeting=meeting_id))
 
     def process_zoom_import(self, request, meeting_id):
         # Feature is currently disabled — the underlying code is preserved

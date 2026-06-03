@@ -1,37 +1,19 @@
 import logging
 
-from django.conf import settings
 from django.core.mail import send_mass_mail
 
 logger = logging.getLogger(__name__)
 
 
-def send_announcement(announcement):
-    """
-    Sends an announcement email to the filtered audience.
-    Returns the number of emails sent.
-    """
-    from django.contrib.auth import get_user_model
+def send_announcement(announcement, edits=None):
+    """Send an announcement to its filtered audience. ``edits`` optionally
+    overrides the subject/body (supplied by the review-before-send page).
+    Returns the number of emails sent."""
+    from .emails import build_announcement_draft, render_messages
 
-    User = get_user_model()
-
-    if announcement.audience == "officers":
-        recipients = User.objects.filter(is_officer=True, is_active=True)
-    elif announcement.audience == "guests":
-        recipients = User.objects.filter(is_guest=True, is_active=True)
-    else:
-        recipients = User.objects.filter(is_active=True)
-
-    messages = []
-    sender = settings.DEFAULT_FROM_EMAIL
-
-    for user in recipients:
-        if user.email:
-            messages.append((announcement.subject, announcement.body, sender, [user.email]))
-
+    messages = render_messages(build_announcement_draft(announcement)["groups"], edits)
     try:
-        count = send_mass_mail(tuple(messages), fail_silently=False)
+        return send_mass_mail(messages, fail_silently=False)
     except Exception:
         logger.exception("Failed to send announcement: %s", announcement)
         raise
-    return count

@@ -16,16 +16,13 @@ from collections import defaultdict
 from datetime import date, datetime, time, timedelta
 from urllib.parse import urlencode
 
-from django.contrib import admin, messages
+from django.contrib import admin
 from django.contrib.admin.views.decorators import staff_member_required
 from django.db.models import Count, Max, Q
-from django.shortcuts import get_object_or_404, redirect, render
-from django.urls import reverse
+from django.shortcuts import get_object_or_404, render
 from django.utils import timezone
-from django.views.decorators.http import require_POST
 
 from meetings.models import Attendance, Meeting, MeetingRole, Role
-from meetings.utils import send_role_invite
 
 from .models import User
 
@@ -229,41 +226,3 @@ def activity_report_detail(request, user_id):
         "querystring": _querystring(start, end),
     }
     return render(request, "members/admin/activity_report_detail.html", context)
-
-
-@require_POST
-@staff_member_required
-def activity_report_invite(request, user_id, role_id):
-    """Email a member inviting them to sign up for a role at an upcoming
-    meeting, then return to their detail page with a status message."""
-    member = get_object_or_404(User, pk=user_id)
-    role = get_object_or_404(Role, pk=role_id, show_on_agenda=True)
-
-    back = reverse("admin:members_user_activity_report_detail", args=[member.pk])
-    qs = _querystring(request.POST.get("start"), request.POST.get("end"))
-    back = f"{back}?{qs}" if qs else back
-
-    if not Meeting.objects.filter(date__gte=timezone.now()).exists():
-        messages.error(request, "No upcoming meetings to invite for.")
-        return redirect(back)
-    if not member.email:
-        messages.error(request, f"{member} has no email address on file.")
-        return redirect(back)
-
-    try:
-        n = send_role_invite(member, role)
-    except Exception:
-        messages.error(request, f"Could not send the invite to {member}.")
-        return redirect(back)
-
-    if n:
-        messages.success(
-            request,
-            f"Invited {member} to take {role.name} "
-            f"({n} upcoming meeting{'s' if n != 1 else ''} with it open).")
-    else:
-        messages.success(
-            request,
-            f"Invited {member} to take {role.name} (linked to the sign-up "
-            f"page; no upcoming meeting currently has it open).")
-    return redirect(back)
