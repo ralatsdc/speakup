@@ -1,6 +1,13 @@
+from datetime import timedelta
+
 from django.contrib.auth.models import Group
+from django.core import mail
 from django.db import IntegrityError
 from django.test import TestCase
+from django.urls import reverse
+from django.utils import timezone
+
+from meetings.models import Meeting, MeetingRole, Role
 
 from .admin import CustomUserCreationForm, make_officer, remove_officer
 from .models import User
@@ -188,3 +195,111 @@ class OfficerBulkAdminActionTest(TestCase):
             self.assertFalse(user.is_officer)
             self.assertFalse(user.is_staff)
             self.assertFalse(user.groups.filter(name=OFFICERS_GROUP_NAME).exists())
+
+
+class ActivityReportTest(TestCase):
+    """Summary filter, detail breakdown, and role-invite behavior."""
+
+    def setUp(self):
+        self.staff = User.objects.create_superuser(
+            username="boss", email="boss@example.com", password="pw")
+        self.client.force_login(self.staff)
+
+        self.tm = Role.objects.create(name="Toastmaster")
+        self.timer = Role.objects.create(name="Timer")
+        # President is not sign-up-able; it must never appear in the breakdown
+        # or be invitable.
+        self.president = Role.objects.create(name="President", show_on_agenda=False)
+
+        self.alice = User.objects.create_user(
+            username="alice", email="alice@example.com", password="pw",
+            first_name="Alice", last_name="Adams")
+        self.bob = User.objects.create_user(
+            username="bob", email="bob@example.com", password="pw",
+            first_name="Bob", last_name="Brown")
+
+        # A past meeting where Alice was Toastmaster.
+        self.past = Meeting.objects.create(
+            date=timezone.now() - timedelta(days=10))
+        MeetingRole.objects.create(meeting=self.past, role=self.tm,
+                                   user=self.alice)
+
+    def _upcoming_with_open_tm(self):
+        m = Meeting.objects.create(date=timezone.now() + timedelta(days=5))
+        MeetingRole.objects.create(meeting=m, role=self.tm, user=None)
+        return m
+
+    # --- summary role filter ---
+
+    def test_taken_filter_includes_only_role_holders(self):
+        url = reverse("admin:members_user_activity_report")
+        members = list(self.client.get(
+            url, {"role": self.tm.pk, "taken": "yes"}).context["members"])
+        self.assertIn(self.alice, members)
+        self.assertNotIn(self.bob, members)
+
+    def test_not_taken_filter_excludes_role_holders(self):
+        url = reverse("admin:members_user_activity_report")
+        members = list(self.client.get(
+            url, {"role": self.tm.pk, "taken": "no"}).context["members"])
+        self.assertNotIn(self.alice, members)
+        self.assertIn(self.bob, members)
+
+    def test_filter_honors_date_range(self):
+        # Alice's role is 10 days ago; a window starting 5 days ago excludes it,
+        # so she counts as "not taken" in that range.
+        url = reverse("admin:members_user_activity_report")
+        start = (timezone.now() - timedelta(days=5)).date().isoformat()
+        members = list(self.client.get(
+            url, {"role": self.tm.pk, "taken": "no", "start": start}
+        ).context["members"])
+        self.assertIn(self.alice, members)
+
+    # --- detail breakdown ---
+
+    def test_detail_lists_all_signup_roles_with_counts(self):
+        url = reverse("admin:members_user_activity_report_detail",
+                      args=[self.alice.pk])
+        breakdown = {r["role"].name: r
+                     for r in self.client.get(url).context["role_breakdown"]}
+        self.assertEqual(breakdown["Toastmaster"]["count"], 1)
+        self.assertIsNotNone(breakdown["Toastmaster"]["last_taken"])
+        # Timer never taken, but still listed with a zero count.
+        self.assertEqual(breakdown["Timer"]["count"], 0)
+        self.assertIsNone(breakdown["Timer"]["last_taken"])
+        # President is off-agenda -> not in the breakdown.
+        self.assertNotIn("President", breakdown)
+
+    # --- invite ---
+
+    def test_invite_sends_email_listing_open_meeting(self):
+        self._upcoming_with_open_tm()
+        url = reverse("admin:members_user_activity_report_invite",
+                      args=[self.bob.pk, self.tm.pk])
+        resp = self.client.post(url)
+        self.assertEqual(resp.status_code, 302)
+        self.assertEqual(len(mail.outbox), 1)
+        msg = mail.outbox[0]
+        self.assertIn("Toastmaster", msg.subject)
+        self.assertEqual(msg.to, [self.bob.email])
+        self.assertIn("signups", msg.body)
+
+    def test_invite_blocked_when_no_upcoming(self):
+        url = reverse("admin:members_user_activity_report_invite",
+                      args=[self.bob.pk, self.tm.pk])
+        resp = self.client.post(url)
+        self.assertEqual(resp.status_code, 302)
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_invite_rejects_off_agenda_role(self):
+        self._upcoming_with_open_tm()
+        url = reverse("admin:members_user_activity_report_invite",
+                      args=[self.bob.pk, self.president.pk])
+        resp = self.client.post(url)
+        self.assertEqual(resp.status_code, 404)
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_invite_requires_post(self):
+        url = reverse("admin:members_user_activity_report_invite",
+                      args=[self.bob.pk, self.tm.pk])
+        self.assertEqual(self.client.get(url).status_code, 405)

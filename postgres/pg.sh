@@ -24,6 +24,8 @@ OPTIONS
 
     -r    Restore from an archive
 
+    -u    Restore Railway from a SQLite database (push local data up)
+
     -p    Prune old backups (GFS rotation)
 
     -t    Test-restore the latest dump (requires Docker Desktop)
@@ -44,9 +46,10 @@ EOF
 dump=0
 convert=0
 restore=""
+upload=""
 prune=0
 test_restore=0
-while getopts ":dcr:pthex" opt; do
+while getopts ":dcr:u:pthex" opt; do
     case $opt in
         d)
             dump=1
@@ -56,6 +59,9 @@ while getopts ":dcr:pthex" opt; do
             ;;
         r)
 	    restore="${OPTARG}"
+            ;;
+        u)
+            upload="${OPTARG}"
             ;;
         p)
             prune=1
@@ -86,11 +92,11 @@ while getopts ":dcr:pthex" opt; do
     esac
 done
 
-if [[ $dump -eq 0 && $convert -eq 0 && $restore == "" && $prune -eq 0 && $test_restore -eq 0 ]]; then
-    echo "Must select dump, convert, restore, prune, or test"
+if [[ $dump -eq 0 && $convert -eq 0 && $restore == "" && $upload == "" && $prune -eq 0 && $test_restore -eq 0 ]]; then
+    echo "Must select dump, convert, restore, upload, prune, or test"
     exit 1
-elif [[ $(( $dump + $convert + $prune + $test_restore + $([[ $restore != "" ]] && echo 1 || echo 0) )) -gt 1 ]]; then
-    echo "Can only select one of dump, convert, restore, prune, or test"
+elif [[ $(( $dump + $convert + $prune + $test_restore + $([[ $restore != "" ]] && echo 1 || echo 0) + $([[ $upload != "" ]] && echo 1 || echo 0) )) -gt 1 ]]; then
+    echo "Can only select one of dump, convert, restore, upload, prune, or test"
     exit 1
 fi
 
@@ -352,6 +358,87 @@ elif [[ $convert -eq 1 ]]; then
     pushd ..
     ln -fs postgres/$db_name db.sqlite3
     popd
+elif [[ $upload != "" ]]; then
+    # Push a local SQLite database up to Railway — the inverse of -c. Mirrors
+    # the same dumpdata exclusions/natural keys so the round trip is symmetric.
+    #
+    # Safety: everything that can fail without touching Railway runs FIRST
+    # (serialize, schema check). Immediately before the destructive flush we
+    # take a full safety dump, so any failure is one `-r` away from recovery.
+    # set -e aborts on the first unexpected error; steps that need a custom
+    # message are guarded explicitly.
+    set -e
+    if [[ ! -f "$upload" ]]; then
+        echo "SQLite database not found: $upload"
+        exit 1
+    fi
+    sqlite_abs="$(cd "$(dirname "$upload")" && pwd)/$(basename "$upload")"
+    py_path="$SCRIPT_DIR/../.venv/bin/python"
+    mang_path="$SCRIPT_DIR/../manage.py"
+    data_path="$SCRIPT_DIR/_upload_data.json"
+    pg_url="postgresql://$PGUSER:$PGPASSWORD@$PGHOST:$PGPORT/$PGDATABASE"
+
+    # 1. Serialize local rows (non-destructive; fail fast if the DB is bad).
+    #    Exclude what migrate/flush re-seed; natural FKs so references to
+    #    contenttypes/permissions re-resolve on the target.
+    DATABASE_URL="sqlite:///$sqlite_abs" "$py_path" "$mang_path" dumpdata \
+        --natural-foreign \
+        --exclude contenttypes --exclude auth.permission \
+        --exclude sessions.session --exclude admin.logentry \
+        -o "$data_path"
+
+    # 2. Schema guard: abort if Railway has migrations this branch lacks (prod
+    #    is AHEAD). That is exactly the drift that makes loaddata fail on a
+    #    column the SQLite dump can't supply — catch it BEFORE flushing. (Local
+    #    being ahead is fine: step 5's migrate applies those to Railway.)
+    ahead="$(DATABASE_URL="$pg_url" "$py_path" "$mang_path" shell -c '
+from django.db import connections
+from django.db.migrations.loader import MigrationLoader
+loader = MigrationLoader(connections["default"])
+extra = sorted(set(loader.applied_migrations) - set(loader.disk_migrations))
+print(";".join(f"{a}.{n}" for a, n in extra))
+' 2>/dev/null | tail -1)"
+    if [[ -n "$ahead" ]]; then
+        rm -f "$data_path"
+        echo "Schema mismatch: Railway has migrations this branch lacks:"
+        echo "  $ahead"
+        echo "Bring the branch up to production's schema first. No change was made."
+        exit 1
+    fi
+
+    # 3. Confirm — the next steps overwrite all Railway data.
+    echo "About to OVERWRITE Railway database '$PGDATABASE' on $PGHOST"
+    echo "with all data from: $sqlite_abs"
+    echo "This DELETES every existing row in Railway before loading."
+    read -rp "Proceed? [y/N] " answer
+    if [[ ! "$answer" =~ ^[Yy]$ ]]; then
+        rm -f "$data_path"
+        echo "Aborted."
+        exit 0
+    fi
+
+    # 4. Safety net: full dump of Railway *before* the flush, so a failed load
+    #    is recoverable with `pg.sh -r`. Named like a normal dump so GFS prunes it.
+    safety_dump="$SCRIPT_DIR/dump-$(date "+%Y-%m-%dT%H:%M:%S").tar"
+    echo "Backing up Railway to $(basename "$safety_dump") before overwrite..."
+    pg_dump -h "$PGHOST" -p "$PGPORT" -d "$PGDATABASE" -U "$PGUSER" -w -F t > "$safety_dump"
+
+    # 5. Apply migrations (no-op after the check), clear data (flush re-seeds
+    #    contenttypes + permissions via post_migrate), then load. A loaddata
+    #    failure leaves Railway flushed, so point at the safety dump rather than
+    #    falsely reporting success.
+    DATABASE_URL="$pg_url" "$py_path" "$mang_path" migrate --noinput
+    DATABASE_URL="$pg_url" "$py_path" "$mang_path" flush --noinput
+    if ! DATABASE_URL="$pg_url" "$py_path" "$mang_path" loaddata "$data_path"; then
+        echo "" >&2
+        echo "loaddata FAILED — Railway is now empty. Restore the safety dump:" >&2
+        echo "    bash pg.sh -r $(basename "$safety_dump")" >&2
+        rm -f "$data_path"
+        exit 1
+    fi
+    rm -f "$data_path"
+    echo "Railway database restored from $(basename "$sqlite_abs")."
+    echo "Safety backup kept at $(basename "$safety_dump")."
 elif [[ $prune -eq 1 ]]; then
     prune_backups
 elif [[ $test_restore -eq 1 ]]; then

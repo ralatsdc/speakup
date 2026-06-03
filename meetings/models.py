@@ -360,8 +360,15 @@ class RoleGuideEmailLog(models.Model):
 
 
 @receiver(post_save, sender=Meeting)
-def populate_meeting_from_type(sender, instance, created, **kwargs):
-    """Auto-create MeetingSession and MeetingRole rows from the MeetingType template."""
+def populate_meeting_from_type(sender, instance, created, raw=False, **kwargs):
+    """Auto-create MeetingSession and MeetingRole rows from the MeetingType template.
+
+    Skips fixture loads (``raw=True``): during ``loaddata`` the template rows
+    are already in the fixture, so populating again would duplicate them (this
+    is what the pg.sh -c/-u dumpdata|loaddata pipeline relies on).
+    """
+    if raw:
+        return
     if created and instance.meeting_type:
         try:
             if instance.meeting_type.zoom_link and not instance.zoom_link:
@@ -389,13 +396,16 @@ def populate_meeting_from_type(sender, instance, created, **kwargs):
 
 
 @receiver(post_save, sender=MeetingRole)
-def send_first_time_role_email_on_assignment(sender, instance, created, **kwargs):
+def send_first_time_role_email_on_assignment(sender, instance, created, raw=False, **kwargs):
     """Send a one-time welcome email with the role-guidance attachment the
     first time a member is assigned to a given role. Idempotency is anchored
     on RoleGuideEmailLog (user, role); existing pre-feature assignments were
     backfilled by migration so members aren't re-onboarded retroactively.
+
+    Skips fixture loads (``raw=True``) so a dumpdata|loaddata copy of existing
+    assignments doesn't email everyone.
     """
-    if instance.user_id is None:
+    if raw or instance.user_id is None:
         return
     # Lazy import keeps models.py free of email/utils coupling and avoids
     # circular import (utils imports from members.models).
