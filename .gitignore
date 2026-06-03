@@ -10,3 +10,8 @@ __pycache__/
 *~
 ~*
 *.sqlite3*
+
+# Generated review artifacts from the Open Roles import
+# (regenerate with import_scripts/build_artifacts.py)
+import_scripts/parse_preview.txt
+import_scripts/alias_map_draft.md
