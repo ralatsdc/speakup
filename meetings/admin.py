@@ -228,6 +228,26 @@ class MeetingAdmin(admin.ModelAdmin):
         # rows to save or run an action.
         css = {"all": ("meetings/admin/meeting_change_form.css",)}
 
+    def get_fieldsets(self, request, obj=None):
+        # On the add form there's nothing to collapse behind yet, so show
+        # "Meeting details" open. When changing an existing meeting it stays
+        # collapsed (word_of_the_day is the only field touched regularly).
+        fieldsets = super().get_fieldsets(request, obj)
+        if obj is None:
+            fieldsets = [
+                (
+                    name,
+                    {
+                        **opts,
+                        "classes": tuple(
+                            c for c in opts.get("classes", ()) if c != "collapse"
+                        ),
+                    },
+                )
+                for name, opts in fieldsets
+            ]
+        return fieldsets
+
     def role_count_status(self, obj):
         filled = obj.roles.filter(user__isnull=False).count()
         total = obj.roles.count()
