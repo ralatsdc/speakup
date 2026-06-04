@@ -32,7 +32,8 @@ class RoleAdmin(admin.ModelAdmin):
         "is_evaluator_role",
         "is_evaluated_role",
         "points",
-        "time_minutes",
+        "min_minutes",
+        "max_minutes",
         "has_guide",
     )
     list_filter = ("shows_pathways_fields", "is_evaluator_role", "is_evaluated_role")
@@ -113,7 +114,7 @@ class MeetingRoleInline(admin.StackedInline):
                 ("session", "role", "user", "in_person"),
                 "evaluates",
                 ("pathways_path", "pathways_level", "pathways_project"),
-                "time_minutes",
+                "exact_minutes",
                 # sort_order is hidden by inline_drag_sort.css — drag-to-
                 # reorder writes to it via JS. Kept in the fieldset so the
                 # form submits the updated value.

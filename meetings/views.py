@@ -341,8 +341,9 @@ def meeting_agenda_download(request, meeting_id):
                 # person, [R] remote, [-] unknown.
                 mode = {True: "L", False: "R"}.get(assignment.in_person, "-")
                 p.add_run(f" [{mode}]")
-                if assignment.time_minutes:
-                    p.add_run(f" {assignment.time_minutes} min")
+                duration = assignment.duration_label()
+                if duration:
+                    p.add_run(f" {duration}")
 
                 # Report each evaluator pairing once, from the evaluator's
                 # side ("evaluating <speaker>"); the reverse "evaluator: <name>"

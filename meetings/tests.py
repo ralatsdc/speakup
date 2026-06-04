@@ -1319,7 +1319,7 @@ class AgendaViewTest(TestCase):
         )
         MeetingRole.objects.create(
             meeting=self.meeting, role=self.speaker_role, user=self.speaker,
-            in_person=True, time_minutes=7, notes="My speech", sort_order=0,
+            in_person=True, exact_minutes=7, notes="My speech", sort_order=0,
         )
         MeetingRole.objects.create(
             meeting=self.meeting, role=self.president_role, user=self.president,
@@ -1371,7 +1371,7 @@ class SignupPageTest(TestCase):
         )
         # One open Speaker role and one (open) hidden President role.
         MeetingRole.objects.create(
-            meeting=self.meeting, role=self.speaker_role, time_minutes=7, sort_order=0
+            meeting=self.meeting, role=self.speaker_role, exact_minutes=7, sort_order=0
         )
         MeetingRole.objects.create(
             meeting=self.meeting, role=self.president_role, sort_order=1
@@ -1420,3 +1420,29 @@ class SignupPageTest(TestCase):
         response = self.client.get(reverse("role_signups"))
         self.assertContains(response, "-- Open --")
         self.assertNotContains(response, "Sign Up</button>")
+
+
+class RoleDurationLabelTest(TestCase):
+    """MeetingRole.duration_label(): exact override, else the role's range."""
+
+    def setUp(self):
+        self.meeting = Meeting.objects.create(date=timezone.now())
+
+    def _role_assignment(self, lo, hi, exact=0):
+        role = Role.objects.create(name=f"R{lo}{hi}{exact}",
+                                   min_minutes=lo, max_minutes=hi)
+        return MeetingRole.objects.create(
+            meeting=self.meeting, role=role, exact_minutes=exact)
+
+    def test_range(self):
+        self.assertEqual(self._role_assignment(5, 7).duration_label(), "5–7 min")
+
+    def test_fixed_when_min_equals_max(self):
+        self.assertEqual(self._role_assignment(2, 2).duration_label(), "2 min")
+
+    def test_untimed_is_blank(self):
+        self.assertEqual(self._role_assignment(0, 0).duration_label(), "")
+
+    def test_exact_override_wins(self):
+        self.assertEqual(
+            self._role_assignment(5, 7, exact=10).duration_label(), "10 min")

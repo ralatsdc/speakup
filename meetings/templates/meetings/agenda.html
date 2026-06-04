@@ -58,9 +58,11 @@
                             <tr>
                                 <td class="fw-bold">
                                     {{ assignment.role.name }}
-                                    {% if assignment.time_minutes %}
-                                        <div class="small text-muted fw-normal">{{ assignment.time_minutes }} min</div>
-                                    {% endif %}
+                                    {% with duration=assignment.duration_label %}
+                                        {% if duration %}
+                                            <div class="small text-muted fw-normal">{{ duration }}</div>
+                                        {% endif %}
+                                    {% endwith %}
                                 </td>
                                 <td>
                                     {% if assignment.user %}

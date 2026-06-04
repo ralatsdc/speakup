@@ -30,7 +30,14 @@ class Role(models.Model):
         "MeetingRole.evaluates.",
     )
     points = models.IntegerField(default=1, help_text="Points for difficulty/effort")
-    time_minutes = models.PositiveIntegerField(default=0, help_text="Expected duration in minutes")
+    min_minutes = models.PositiveIntegerField(
+        default=0, help_text="Standard minimum duration in minutes (0 = untimed)."
+    )
+    max_minutes = models.PositiveIntegerField(
+        default=0,
+        help_text="Standard maximum duration in minutes; equal to the minimum "
+        "for a fixed duration.",
+    )
     show_on_agenda = models.BooleanField(
         default=True,
         help_text="Uncheck to keep this role off the published agenda "
@@ -180,7 +187,11 @@ class MeetingRole(models.Model):
         help_text="Whether the assigned member attends in person. "
         "Null until a member signs up.",
     )
-    time_minutes = models.PositiveIntegerField(default=0, help_text="Expected duration in minutes")
+    exact_minutes = models.PositiveIntegerField(
+        default=0,
+        help_text="Exact duration for this assignment, overriding the role's "
+        "standard range. 0 = use the range.",
+    )
     notes = models.TextField(blank=True, help_text="Speech title, project details, or feedback.")
     admin_notes = models.TextField(blank=True, help_text="Private feedback or details for the follow-up email.")
     feedback_sent_notes = models.TextField(
@@ -253,6 +264,18 @@ class MeetingRole(models.Model):
         if self.in_person is False:
             return "Remote"
         return ""
+
+    def duration_label(self):
+        """Duration shown on the agendas: the exact override if set, else the
+        role's standard range ('5–7 min', or 'N min' when fixed), else ''."""
+        if self.exact_minutes:
+            return f"{self.exact_minutes} min"
+        lo, hi = self.role.min_minutes, self.role.max_minutes
+        if not (lo or hi):
+            return ""
+        if lo and hi and lo != hi:
+            return f"{lo}–{hi} min"
+        return f"{hi or lo} min"
 
     def pathways_label(self):
         """Speaker's Pathways summary, e.g. 'Presentation Mastery L2,
@@ -387,7 +410,6 @@ def populate_meeting_from_type(sender, instance, created, raw=False, **kwargs):
                         meeting=instance,
                         role=item.role,
                         session=item.session,
-                        time_minutes=item.role.time_minutes,
                         notes=item.default_note,
                         sort_order=item.order,
                     )
