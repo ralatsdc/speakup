@@ -1,6 +1,7 @@
 import base64
 import io
 import json
+from datetime import timedelta
 from pathlib import Path
 
 import qrcode
@@ -16,7 +17,13 @@ from django.utils import timezone
 from django.views.decorators.http import require_POST
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.shared import Pt
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
+from docx.shared import Inches, Pt
+
+# Vertical gap before/after agenda lines. Kept tight so a typical (trimmed)
+# meeting agenda fits on a single page.
+AGENDA_GAP = Pt(2)
 
 AGENDA_TEMPLATE = (
     Path(__file__).parent / "templates" / "meetings" / "agenda" / "agenda_template.docx"
@@ -106,10 +113,92 @@ def _replace_in_paragraph(paragraph, placeholder, replacement):
     return True
 
 
+def _replace_in_run(paragraph, placeholder, replacement):
+    """Replace a placeholder that lives wholly within a single run, preserving
+    that run's formatting (so e.g. a non-bold value stays non-bold next to a
+    bold label). Returns False if the placeholder spans runs (caller can fall
+    back to the run-collapsing _replace_in_paragraph)."""
+    for run in paragraph.runs:
+        if placeholder in run.text:
+            run.text = run.text.replace(placeholder, replacement)
+            return True
+    return False
+
+
 def _remove_paragraph(paragraph):
-    """Remove a paragraph element from the document XML."""
+    """Remove a paragraph element from the document XML (no-op if already gone)."""
     p = paragraph._element
-    p.getparent().remove(p)
+    parent = p.getparent()
+    if parent is not None:
+        parent.remove(p)
+
+
+def _set_table_cell_margins(table, top_pt, bottom_pt, side_twips=108):
+    """Set the table's default cell margins. Top/bottom add a little breathing
+    room above and below each horizontal rule (the row borders); left/right are
+    preserved near Word's default so column spacing is unchanged."""
+    tblPr = table._tbl.tblPr
+    existing = tblPr.find(qn("w:tblCellMar"))
+    if existing is not None:
+        tblPr.remove(existing)
+    mar = OxmlElement("w:tblCellMar")
+    for side, twips in (("top", int(top_pt * 20)), ("left", side_twips),
+                        ("bottom", int(bottom_pt * 20)), ("right", side_twips)):
+        el = OxmlElement(f"w:{side}")
+        el.set(qn("w:w"), str(twips))
+        el.set(qn("w:type"), "dxa")
+        mar.append(el)
+    tblPr.append(mar)
+
+
+def _fit_table_width(table, total_twips):
+    """Rescale the table's columns to span ``total_twips`` (the text-area
+    width), keeping their proportions, and pin the table to a fixed layout at
+    that width. The template grid was sized for the old, wider margins, so
+    without this the table renders narrow and sits offset to the left."""
+    tbl = table._tbl
+    grid = tbl.find(qn("w:tblGrid"))
+    cols = grid.findall(qn("w:gridCol"))
+    widths = [int(c.get(qn("w:w"))) for c in cols]
+    old_total = sum(widths) or 1
+    new = [round(total_twips * w / old_total) for w in widths]
+    new[-1] += total_twips - sum(new)  # absorb rounding into the last column
+    for col, w in zip(cols, new):
+        col.set(qn("w:w"), str(w))
+
+    tblPr = tbl.tblPr
+    tblW = tblPr.find(qn("w:tblW"))
+    if tblW is None:
+        tblW = OxmlElement("w:tblW")
+        tblPr.append(tblW)
+    tblW.set(qn("w:type"), "dxa")
+    tblW.set(qn("w:w"), str(total_twips))
+
+    layout = tblPr.find(qn("w:tblLayout"))
+    if layout is None:
+        layout = OxmlElement("w:tblLayout")
+        tblPr.append(layout)
+    layout.set(qn("w:type"), "fixed")
+
+    for row in table.rows:
+        for cell, w in zip(row.cells, new):
+            tcPr = cell._tc.get_or_add_tcPr()
+            tcW = tcPr.find(qn("w:tcW"))
+            if tcW is None:
+                tcW = OxmlElement("w:tcW")
+                tcPr.insert(0, tcW)
+            tcW.set(qn("w:type"), "dxa")
+            tcW.set(qn("w:w"), str(w))
+
+
+def _add_run(paragraph, text, bold=False, size=None):
+    """Append a run with explicit bold/size so a line can mix bold labels with
+    plain values."""
+    run = paragraph.add_run(text)
+    run.bold = bold
+    if size is not None:
+        run.font.size = size
+    return run
 
 
 def meeting_agenda_download(request, meeting_id):
@@ -118,31 +207,70 @@ def meeting_agenda_download(request, meeting_id):
 
     doc = Document(AGENDA_TEMPLATE)
 
+    # Tighten the layout so a typical (trimmed) meeting fits one page: narrow
+    # margins and a 10pt body font. The template's header runs carry their own
+    # sizes, so this only shrinks the role-list body text.
+    for section in doc.sections:
+        section.top_margin = section.bottom_margin = Inches(0.5)
+        section.left_margin = section.right_margin = Inches(0.6)
+    doc.styles["Normal"].font.size = Pt(10)
+
     # Required placeholders — always replaced
     replacements = {
         "{{DATE}}": meeting.date.strftime("%A, %B %d, %Y"),
         "{{TIME}}": meeting.date.strftime("%I:%M %p"),
     }
 
-    # Optional placeholders — entire paragraph removed when empty
-    optional = {
-        "{{THEME}}": meeting.theme,
-        "{{WORD_OF_THE_DAY}}": meeting.word_of_the_day,
-        "{{ZOOM_LINK}}": meeting.zoom_link,
-    }
+    # Next meeting (time, date, type) — its line is dropped if none is scheduled.
+    next_meeting = (
+        Meeting.objects.filter(date__gt=meeting.date).order_by("date").first()
+    )
+    next_meeting_text = ""
+    if next_meeting:
+        next_meeting_text = next_meeting.date.strftime("%I:%M %p, %A, %B %d, %Y")
+        if next_meeting.meeting_type:
+            next_meeting_text += f" ({next_meeting.meeting_type})"
+
+    # Theme / Word-of-the-day share one template line. Rebuild it in code so
+    # each label is bold but its value is not, and an empty field (with its
+    # label) drops out. header_size is captured here and reused for the Zoom
+    # link so the two match.
+    header_segments = [("Theme: ", meeting.theme),
+                       ("Word of the Day: ", meeting.word_of_the_day)]
+    header_size = Pt(10)
 
     paragraphs_to_remove = []
     for paragraph in doc.paragraphs:
         for placeholder, value in replacements.items():
             _replace_in_paragraph(paragraph, placeholder, value)
 
-        for placeholder, value in optional.items():
-            full_text = "".join(run.text for run in paragraph.runs)
-            if placeholder in full_text:
-                if value:
-                    _replace_in_paragraph(paragraph, placeholder, value)
-                else:
-                    paragraphs_to_remove.append(paragraph)
+        text = "".join(run.text for run in paragraph.runs)
+
+        if "{{THEME}}" in text or "{{WORD_OF_THE_DAY}}" in text:
+            if paragraph.runs and paragraph.runs[0].font.size:
+                header_size = paragraph.runs[0].font.size
+            filled = [(label, value) for label, value in header_segments if value]
+            for run in list(paragraph.runs):
+                run._element.getparent().remove(run._element)
+            if not filled:
+                paragraphs_to_remove.append(paragraph)
+            else:
+                for i, (label, value) in enumerate(filled):
+                    if i:
+                        _add_run(paragraph, ", ", size=header_size)
+                    _add_run(paragraph, label, bold=True, size=header_size)
+                    _add_run(paragraph, value, size=header_size)
+            continue
+
+        # Next meeting: replace within its own (non-bold) run so the value
+        # stays plain next to the bold "NEXT MEETING:" label; drop the line if
+        # there is no next meeting.
+        if "{{NEXT_MEETING}}" in text:
+            if next_meeting_text:
+                if not _replace_in_run(paragraph, "{{NEXT_MEETING}}", next_meeting_text):
+                    _replace_in_paragraph(paragraph, "{{NEXT_MEETING}}", next_meeting_text)
+            else:
+                paragraphs_to_remove.append(paragraph)
 
     for p in paragraphs_to_remove:
         _remove_paragraph(p)
@@ -150,6 +278,12 @@ def meeting_agenda_download(request, meeting_id):
     # Populate the 2-column table (session | roles)
     sections = _build_agenda_sections(meeting)
     table = doc.tables[0]
+    # A little breathing room above/below each horizontal rule (row border).
+    _set_table_cell_margins(table, top_pt=3, bottom_pt=3)
+
+    # Running clock: the first session starts 5 minutes after the meeting time,
+    # and each session then advances by its own duration.
+    current_time = meeting.date + timedelta(minutes=5)
 
     first = True
     for section in sections:
@@ -160,24 +294,23 @@ def meeting_agenda_download(request, meeting_id):
         else:
             row_cells = table.add_row().cells
 
-        # Cell 0: session name, duration, and notes
+        # Cell 0: session name, then "start time, duration - note" beneath it.
         c = row_cells[0]
         p1 = c.paragraphs[0]
         p1.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-        p1.paragraph_format.space_before = Pt(6)
+        p1.paragraph_format.space_before = AGENDA_GAP
         if session:
             r = p1.add_run(session.name)
-            if session.duration_minutes or section["note"]:
-                p2 = c.add_paragraph()
-                p2.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-                p2.paragraph_format.space_after = Pt(6)
+            detail = current_time.strftime("%I:%M %p")
             if session.duration_minutes:
-                p2.add_run(f"{session.duration_minutes} min")
+                detail += f", {session.duration_minutes} min"
             if section["note"]:
-                if session.duration_minutes:
-                    p2.add_run(f" - {section['note']}")
-                else:
-                    p2.add_run(f"{section['note']}")
+                detail += f" - {section['note']}"
+            p2 = c.add_paragraph()
+            p2.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+            p2.paragraph_format.space_after = AGENDA_GAP
+            p2.add_run(detail)
+            current_time += timedelta(minutes=session.duration_minutes or 0)
         else:
             r = p1.add_run("Other")
         r.bold = True
@@ -193,7 +326,7 @@ def meeting_agenda_download(request, meeting_id):
                     first_role = False
                 else:
                     p = c.add_paragraph()
-                p.paragraph_format.space_before = Pt(6)
+                p.paragraph_format.space_before = AGENDA_GAP
 
                 member = (
                     f"{assignment.user.first_name} {assignment.user.last_name}"
@@ -204,26 +337,59 @@ def meeting_agenda_download(request, meeting_id):
                 run.bold = True
                 p.add_run(member)
 
-                attendance = assignment.attendance_label()
-                if attendance:
-                    p.add_run(f" ({attendance})")
+                # In-person status in brackets next to the name: [L] in
+                # person, [R] remote, [-] unknown.
+                mode = {True: "L", False: "R"}.get(assignment.in_person, "-")
+                p.add_run(f" [{mode}]")
                 if assignment.time_minutes:
                     p.add_run(f" {assignment.time_minutes} min")
 
+                # Report each evaluator pairing once, from the evaluator's
+                # side ("evaluating <speaker>"); the reverse "evaluator: <name>"
+                # line on the speaker's row would just duplicate it.
                 for label in (
                     assignment.evaluating_label(),
-                    assignment.evaluated_by_label(),
                     assignment.agenda_notes(),
                 ):
                     if label:
                         c.add_paragraph().add_run(label).italic = True
 
-            c.paragraphs[-1].paragraph_format.space_after = Pt(6)
+            c.paragraphs[-1].paragraph_format.space_after = AGENDA_GAP
         elif session and not session.takes_roles:
             p = c.paragraphs[0]
-            p.paragraph_format.space_before = Pt(6)
-            p.paragraph_format.space_after = Pt(6)
+            p.paragraph_format.space_before = AGENDA_GAP
+            p.paragraph_format.space_after = AGENDA_GAP
             p.add_run(section["note"] or "Break")
+
+    # The template grid was sized for the old margins; rescale it to fill the
+    # current text area so the table isn't offset to the left.
+    sec = doc.sections[0]
+    text_twips = round(
+        (int(sec.page_width) - int(sec.left_margin) - int(sec.right_margin)) / 635
+    )
+    _fit_table_width(table, text_twips)
+
+    # Final merged row welcoming members who joined within ~3 months (90 days)
+    # before this meeting. Omitted entirely when there are none.
+    meeting_day = meeting.date.date()
+    newest = (
+        get_user_model().objects.filter(
+            is_active=True, is_guest=False,
+            join_date__gt=meeting_day - timedelta(days=90),
+            join_date__lte=meeting_day,
+        )
+        .order_by("join_date", "last_name", "first_name")
+    )
+    names = [f"{u.first_name} {u.last_name}".strip() for u in newest]
+    if names:
+        welcome = table.add_row()
+        cell = welcome.cells[0].merge(welcome.cells[1])
+        para = cell.paragraphs[0]
+        para.paragraph_format.space_before = AGENDA_GAP
+        para.paragraph_format.space_after = AGENDA_GAP
+        label = para.add_run("Welcome to our newest Speak Up members: ")
+        label.bold = True
+        para.add_run(", ".join(names))
 
     buffer = io.BytesIO()
     doc.save(buffer)
