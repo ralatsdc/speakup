@@ -413,19 +413,21 @@ def role_signups(request):
     meetings_qs = (
         Meeting.objects.filter(date__gte=now)
         .order_by("date")
-        .prefetch_related(
-            "roles",
-            "roles__role",
-            "roles__user",
-            "roles__evaluates__user",
-            "roles__evaluators__user",
-        )
+        .prefetch_related("meeting_sessions__session")
     )
 
     paginator = Paginator(meetings_qs, 10)
     page = paginator.get_page(request.GET.get("page"))
 
-    return render(request, "meetings/signups.html", {"meetings": page})
+    # Group each meeting's roles into session sections, ordered to match the
+    # agenda (sort_order within each session). Same builder the agenda uses.
+    meeting_sections = [(meeting, _build_agenda_sections(meeting)) for meeting in page]
+
+    return render(
+        request,
+        "meetings/signups.html",
+        {"meetings": page, "meeting_sections": meeting_sections},
+    )
 
 
 def _role_row_response(request, assignment, triggers=None):

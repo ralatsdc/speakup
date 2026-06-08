@@ -9,7 +9,7 @@
             <div class="alert alert-info">No upcoming meetings to sign up for. Check back soon!</div>
         {% endif %}
 
-        {% for meeting in meetings %}
+        {% for meeting, sections in meeting_sections %}
         <div class="card shadow-sm mb-4">
             <div class="card-header bg-white d-flex justify-content-between align-items-center">
                 <div>
@@ -20,24 +20,29 @@
                     <span class="badge bg-secondary">Theme: {{ meeting.theme }}</span>
                 {% endif %}
             </div>
-            
+
             <div class="card-body">
-                <table class="table table-hover">
-                    <thead class="table-light">
-                        <tr>
-                            <th scope="col" style="width: 30%;">Role</th>
-                            <th scope="col" style="width: 35%;">Status</th>
-                            <th scope="col" style="width: 35%;">Notes</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for assignment in meeting.roles.all %}
-                            {% if assignment.role.show_on_agenda %}
-                            {% include 'meetings/partials/role_row.html' with assignment=assignment %}
-                            {% endif %}
-                        {% endfor %}
-                    </tbody>
-                </table>
+                {% for section in sections %}
+                    {% if section.roles %}
+                    {% if section.session %}
+                        <h5 class="text-primary mt-3">{{ section.session.name }}</h5>
+                    {% endif %}
+                    <table class="table table-hover mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th scope="col" style="width: 30%;">Role</th>
+                                <th scope="col" style="width: 35%;">Status</th>
+                                <th scope="col" style="width: 35%;">Notes</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for assignment in section.roles %}
+                                {% include 'meetings/partials/role_row.html' with assignment=assignment %}
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    {% endif %}
+                {% endfor %}
             </div>
         </div>
         {% endfor %}
