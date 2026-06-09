@@ -445,7 +445,7 @@ class EmailUtilsTest(TestCase):
             meeting=self.meeting, role=self.role, user=self.user, sort_order=0
         )
 
-    @patch("meetings.utils.send_mass_mail")
+    @patch("communications.emails.send_messages")
     def test_send_reminders(self, mock_send):
         from .utils import send_meeting_reminders
 
@@ -453,28 +453,28 @@ class EmailUtilsTest(TestCase):
         mock_send.assert_called_once()
         messages = mock_send.call_args[0][0]
         self.assertEqual(len(messages), 1)
-        self.assertIn("Speaker", messages[0][0])
+        self.assertIn("Speaker", messages[0].subject)
 
-    @patch("meetings.utils.send_mass_mail")
+    @patch("communications.emails.send_messages")
     def test_reminder_includes_attendance_mode(self, mock_send):
         from .utils import send_meeting_reminders
 
         self.assignment.in_person = False
         self.assignment.save()
         send_meeting_reminders(self.meeting)
-        body = mock_send.call_args[0][0][0][1]
+        body = mock_send.call_args[0][0][0].body
         self.assertIn("(Remote)", body)
 
-    @patch("meetings.utils.send_mass_mail")
+    @patch("communications.emails.send_messages")
     def test_reminder_omits_mode_when_unspecified(self, mock_send):
         from .utils import send_meeting_reminders
 
         send_meeting_reminders(self.meeting)
-        body = mock_send.call_args[0][0][0][1]
+        body = mock_send.call_args[0][0][0].body
         self.assertNotIn("(Remote)", body)
         self.assertNotIn("(In Person)", body)
 
-    @patch("meetings.utils.send_mass_mail")
+    @patch("communications.emails.send_messages")
     def test_send_feedback(self, mock_send):
         from .utils import send_meeting_feedback
 
@@ -485,7 +485,7 @@ class EmailUtilsTest(TestCase):
         self.assertEqual(guest_count, 0)
         mock_send.assert_called_once()
 
-    @patch("meetings.utils.send_mass_mail")
+    @patch("communications.emails.send_messages")
     def test_send_feedback_no_notes(self, mock_send):
         from .utils import send_meeting_feedback
 
@@ -494,7 +494,7 @@ class EmailUtilsTest(TestCase):
         self.assertEqual(guest_count, 0)
         mock_send.assert_called_once()
 
-    @patch("meetings.utils.send_mass_mail")
+    @patch("communications.emails.send_messages")
     def test_send_feedback_includes_guest_user(self, mock_send):
         from .utils import send_meeting_feedback
 
@@ -507,7 +507,7 @@ class EmailUtilsTest(TestCase):
         self.assertEqual(feedback_count, 0)
         self.assertEqual(guest_count, 1)
 
-    @patch("meetings.utils.send_mass_mail")
+    @patch("communications.emails.send_messages")
     def test_send_feedback_includes_walkin_guest(self, mock_send):
         from .utils import send_meeting_feedback
 
@@ -518,7 +518,7 @@ class EmailUtilsTest(TestCase):
         self.assertEqual(feedback_count, 0)
         self.assertEqual(guest_count, 1)
 
-    @patch("meetings.utils.send_mass_mail")
+    @patch("communications.emails.send_messages")
     def test_feedback_not_resent_when_notes_unchanged(self, mock_send):
         from .utils import send_meeting_feedback
 
@@ -533,7 +533,7 @@ class EmailUtilsTest(TestCase):
         second, _ = send_meeting_feedback(self.meeting)
         self.assertEqual(second, 0)
 
-    @patch("meetings.utils.send_mass_mail")
+    @patch("communications.emails.send_messages")
     def test_feedback_resent_when_notes_edited(self, mock_send):
         from .utils import send_meeting_feedback
 
@@ -546,7 +546,7 @@ class EmailUtilsTest(TestCase):
         count, _ = send_meeting_feedback(self.meeting)
         self.assertEqual(count, 1)
 
-    @patch("meetings.utils.send_mass_mail")
+    @patch("communications.emails.send_messages")
     def test_guest_thank_you_not_resent(self, mock_send):
         from .utils import send_meeting_feedback
 

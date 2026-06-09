@@ -1,7 +1,7 @@
 import logging
 import os
 
-from django.core.mail import EmailMessage, send_mass_mail
+from django.core.mail import EmailMessage
 from django.conf import settings
 from django.db import IntegrityError, models, transaction
 from django.urls import reverse
@@ -15,11 +15,11 @@ def send_meeting_reminders(meeting, edits=None):
     unassigned). ``edits`` optionally overrides the per-group subject/body
     templates (supplied by the review-before-send page)."""
     from .emails import build_reminder_draft
-    from communications.emails import render_messages
+    from communications.emails import build_messages, send_messages
 
-    messages = render_messages(build_reminder_draft(meeting)["groups"], edits)
+    messages = build_messages(build_reminder_draft(meeting)["groups"], edits)
     try:
-        return send_mass_mail(messages, fail_silently=False)
+        return send_messages(messages)
     except Exception:
         logger.exception("Failed to send meeting reminders for %s", meeting)
         raise
@@ -33,12 +33,12 @@ def send_meeting_feedback(meeting, edits=None):
     from django.utils import timezone
     from .emails import build_feedback_draft
     from .models import Attendance, MeetingRole
-    from communications.emails import render_messages
+    from communications.emails import build_messages, send_messages
 
     groups = build_feedback_draft(meeting)["groups"]
-    messages = render_messages(groups, edits)
+    messages = build_messages(groups, edits)
     try:
-        send_mass_mail(messages, fail_silently=False)
+        send_messages(messages)
     except Exception:
         logger.exception("Failed to send meeting feedback for %s", meeting)
         raise
@@ -161,12 +161,12 @@ def send_role_invite(member, roles, edits=None, now=None):
     meetings at all (the button is disabled in that case).
     """
     from .emails import build_invite_draft
-    from communications.emails import render_messages
+    from communications.emails import build_messages, send_messages
 
     draft = build_invite_draft(member, roles, now=now)
-    messages = render_messages(draft["groups"], edits)
+    messages = build_messages(draft["groups"], edits)
     try:
-        send_mass_mail(messages, fail_silently=False)
+        send_messages(messages)
     except Exception:
         logger.exception(
             "Failed to send role invite to user=%s roles=%s", member,

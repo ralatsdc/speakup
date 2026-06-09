@@ -38,6 +38,11 @@
     {% if total %}
         <p><strong>{{ total }}</strong> email{{ total|pluralize }} will be sent. Review
         below — edit the shared subject/body if you like; the preview updates as you type.</p>
+        <p class="help" style="color:var(--body-quiet-color,#666);">
+            Bodies are written in <strong>Markdown</strong> — <code>**bold**</code>,
+            <code>*italic*</code>, <code>[links](https://…)</code>, and <code>- lists</code>
+            render as formatted HTML in the email (the preview below shows the source text).
+            Emojis work too. 🎉</p>
 
         <form method="post" action="{% url 'email_review' %}">
             {% csrf_token %}
