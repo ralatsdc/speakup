@@ -274,15 +274,21 @@ class ActivityReportTest(TestCase):
         # President is off-agenda -> not in the breakdown.
         self.assertNotIn("President", breakdown)
 
-    # --- invite button (sending happens on the shared review page) ---
+    # --- invite form (checkboxes + single button; sending happens on the
+    #     shared review page) ---
 
-    def test_invite_links_to_review_when_upcoming(self):
+    def test_invite_form_posts_to_review_when_upcoming(self):
         self._upcoming_with_open_tm()
         url = reverse("admin:members_user_activity_report_detail", args=[self.bob.pk])
-        html = self.client.get(url).content.decode()
-        self.assertTrue(self.client.get(url).context["upcoming_exists"])
-        self.assertIn("workflow=invite", html)
-        self.assertIn(f"role={self.tm.pk}", html)
+        resp = self.client.get(url)
+        html = resp.content.decode()
+        self.assertTrue(resp.context["upcoming_exists"])
+        # Form targets the review page with the invite workflow.
+        self.assertIn(f'action="{reverse("email_review")}"', html)
+        self.assertIn('name="workflow" value="invite"', html)
+        # Each sign-up-able role gets its own (enabled) checkbox.
+        self.assertIn(f'name="role" value="{self.tm.pk}"', html)
+        self.assertIn(f'name="role" value="{self.timer.pk}"', html)
 
     def test_invite_disabled_without_upcoming(self):
         url = reverse("admin:members_user_activity_report_detail", args=[self.bob.pk])

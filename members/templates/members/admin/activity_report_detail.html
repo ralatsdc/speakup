@@ -15,8 +15,8 @@
     {{ block.super }}
     <link rel="stylesheet" href="{% static 'members/admin/sortable_table.css' %}">
     <style>
-        td.invite-cell form { display: inline; margin: 0; }
-        td.invite-cell .invited-note { color: var(--body-quiet-color, #666); }
+        td.invite-cell { text-align: center; }
+        .invite-actions { margin-top: 0.8em; }
     </style>
 {% endblock %}
 
@@ -36,33 +36,41 @@
     {% if not upcoming_exists %}
         <p><em>No upcoming meetings — invitations are disabled until one is scheduled.</em></p>
     {% endif %}
-    <table id="role-breakdown-table" class="sortable-table" style="max-width: 44em;">
-        <thead>
-            <tr>
-                <th class="sortable" data-sort="text">Role</th>
-                <th class="sortable" data-sort="number">Times taken</th>
-                <th class="sortable" data-sort="text">Last taken</th>
-                <th></th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for row in role_breakdown %}
-                <tr class="{% cycle 'row1' 'row2' %}">
-                    <td>{{ row.role.name }}</td>
-                    <td>{{ row.count }}</td>
-                    <td>{% if row.last_taken %}{{ row.last_taken|date:"Y-m-d" }}{% else %}&mdash;{% endif %}</td>
-                    <td class="invite-cell">
-                        {% if upcoming_exists %}
-                            <a class="button"
-                               href="{% url 'email_review' %}?workflow=invite&amp;member={{ member.pk }}&amp;role={{ row.role.pk }}&amp;back={{ request.get_full_path|urlencode }}">Invite</a>
-                        {% else %}
-                            <button type="button" class="button" disabled title="No upcoming meetings">Invite</button>
-                        {% endif %}
-                    </td>
+    <form id="invite-form" method="get" action="{% url 'email_review' %}">
+        <input type="hidden" name="workflow" value="invite">
+        <input type="hidden" name="member" value="{{ member.pk }}">
+        <input type="hidden" name="back" value="{{ request.get_full_path }}">
+        <table id="role-breakdown-table" class="sortable-table" style="max-width: 44em;">
+            <thead>
+                <tr>
+                    <th class="sortable" data-sort="text">Role</th>
+                    <th class="sortable" data-sort="number">Times taken</th>
+                    <th class="sortable" data-sort="text">Last taken</th>
+                    <th>Invite</th>
                 </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+            </thead>
+            <tbody>
+                {% for row in role_breakdown %}
+                    <tr class="{% cycle 'row1' 'row2' %}">
+                        <td>{{ row.role.name }}</td>
+                        <td>{{ row.count }}</td>
+                        <td>{% if row.last_taken %}{{ row.last_taken|date:"Y-m-d" }}{% else %}&mdash;{% endif %}</td>
+                        <td class="invite-cell">
+                            <input type="checkbox" name="role" value="{{ row.role.pk }}"
+                                   aria-label="Invite to {{ row.role.name }}"
+                                   {% if not upcoming_exists %}disabled{% endif %}>
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <div class="invite-actions">
+            <button type="submit" class="default" id="invite-button"
+                    {% if not upcoming_exists %}disabled title="No upcoming meetings"{% endif %}>
+                Invite to selected role(s)
+            </button>
+        </div>
+    </form>
 
     <h2 style="margin-top: 1.5em;">Meeting-by-meeting</h2>
     {% if meeting_rows %}
@@ -101,4 +109,19 @@
     {% endif %}
 
     <script src="{% static 'members/admin/sortable_table.js' %}"></script>
+    <script>
+        // Enable the single Invite button only when at least one role is checked.
+        (function () {
+            var form = document.getElementById("invite-form");
+            var btn = document.getElementById("invite-button");
+            if (!form || !btn || btn.disabled) return;  // no upcoming meetings
+            var boxes = form.querySelectorAll('input[name="role"]');
+            function sync() {
+                btn.disabled = !Array.prototype.some.call(
+                    boxes, function (b) { return b.checked; });
+            }
+            boxes.forEach(function (b) { b.addEventListener("change", sync); });
+            sync();
+        })();
+    </script>
 {% endblock %}

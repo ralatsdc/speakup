@@ -171,26 +171,62 @@ def build_feedback_draft(meeting, back_url=""):
             "back_url": back_url, "target": {"meeting": meeting.id}, "groups": groups}
 
 
-def build_invite_draft(member, role, back_url="", now=None):
-    """Single-recipient invite — pre-rendered to clean literal text (no tokens),
-    since there is nothing to fan out. ``open_count`` drives the status message."""
+def role_phrase(roles):
+    """Human phrasing for a list of roles: "Toastmaster", "Toastmaster or
+    Timer", "Toastmaster, Timer, or Grammarian"."""
+    names = [r.name for r in roles]
+    if len(names) == 1:
+        return names[0]
+    if len(names) == 2:
+        return f"{names[0]} or {names[1]}"
+    return ", ".join(names[:-1]) + f", or {names[-1]}"
+
+
+def build_invite_draft(member, roles, back_url="", now=None):
+    """Single-recipient invite to take one of ``roles`` at an upcoming meeting —
+    pre-rendered to clean literal text (no tokens), since there is nothing to
+    fan out. For each role we list the upcoming meetings that currently have it
+    open. ``open_count`` (distinct upcoming meetings with at least one of these
+    roles open) drives the status message."""
     from .utils import upcoming_meetings_with_open_role
 
     domain = settings.SITE_URL
     signups_url = f"{domain}{reverse('role_signups')}"
-    open_meetings = list(upcoming_meetings_with_open_role(role, now=now))
-    if open_meetings:
-        when = "\n".join(
-            f"- {m.date.strftime('%A, %B %d')}"
-            f" ({m.meeting_type.name if m.meeting_type else 'meeting'})"
-            for m in open_meetings)
-        opening = (f"We'd love for you to take the **{role.name}** role at an "
-                   f"upcoming meeting. It's currently open at:\n\n{when}\n\n")
-    else:
-        opening = (f"We'd love for you to take the **{role.name}** role at an "
-                   f"upcoming meeting.\n\n")
 
-    subject = f"Invitation: take the {role.name} role at SpeakUp"
+    open_meeting_ids = set()
+    per_role = []
+    for role in roles:
+        meetings = list(upcoming_meetings_with_open_role(role, now=now))
+        open_meeting_ids.update(m.id for m in meetings)
+        per_role.append((role, meetings))
+
+    def _when(meetings, indent="  "):
+        return "\n".join(
+            f"{indent}- {m.date.strftime('%A, %B %d')}"
+            f" ({m.meeting_type.name if m.meeting_type else 'meeting'})"
+            for m in meetings)
+
+    if len(roles) == 1:
+        role, meetings = per_role[0]
+        subject = f"Invitation: take the {role.name} role at SpeakUp"
+        if meetings:
+            opening = (f"We'd love for you to take the **{role.name}** role at an "
+                       f"upcoming meeting. It's currently open at:\n\n"
+                       f"{_when(meetings, '')}\n\n")
+        else:
+            opening = (f"We'd love for you to take the **{role.name}** role at an "
+                       f"upcoming meeting.\n\n")
+    else:
+        subject = "Invitation: take a role at SpeakUp"
+        lines = []
+        for role, meetings in per_role:
+            if meetings:
+                lines.append(f"- **{role.name}**, currently open at:\n{_when(meetings)}")
+            else:
+                lines.append(f"- **{role.name}**")
+        opening = ("We'd love for you to take one of these roles at an upcoming "
+                   f"meeting:\n\n" + "\n".join(lines) + "\n\n")
+
     body = (
         f"Hi {member.first_name or member.username},\n\n"
         f"{opening}"
@@ -203,10 +239,10 @@ def build_invite_draft(member, role, back_url="", now=None):
         if member.email else []
     return {
         "workflow": "invite",
-        "title": f"Invite {member} to take {role.name}",
+        "title": f"Invite {member} to take {role_phrase(roles)}",
         "back_url": back_url,
-        "target": {"member": member.id, "role": role.id},
-        "open_count": len(open_meetings),
+        "target": {"member": member.id, "roles": [r.id for r in roles]},
+        "open_count": len(open_meeting_ids),
         "groups": [{
             "key": "invite", "label": str(member),
             "subject": subject, "body": body, "placeholders": [],

@@ -88,6 +88,27 @@ class EmailReviewTest(TestCase):
         self.assertIn("Timer", mail.outbox[-1].subject)
         self.assertEqual(mail.outbox[-1].to, ["bob@example.com"])
 
+    def test_invite_post_multiple_roles_sends_one_email(self):
+        tm = Role.objects.create(name="Toastmaster")
+        timer = Role.objects.create(name="Timer")
+        bob = User.objects.create_user("bob", "bob@example.com", "pw", first_name="Bob")
+        m = Meeting.objects.create(date=timezone.now() + timedelta(days=4))
+        MeetingRole.objects.create(meeting=m, role=tm, user=None)
+        MeetingRole.objects.create(meeting=m, role=timer, user=None)
+        resp = self.client.post(self.url, {
+            "workflow": "invite", "member": bob.id, "role": [tm.id, timer.id]})
+        self.assertEqual(resp.status_code, 302)
+        # One invitation covering both roles, not one per role.
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, ["bob@example.com"])
+        self.assertIn("Toastmaster", mail.outbox[0].body)
+        self.assertIn("Timer", mail.outbox[0].body)
+
+    def test_invite_get_with_no_roles_404(self):
+        bob = User.objects.create_user("bob", "bob@example.com", "pw")
+        resp = self.client.get(self.url, {"workflow": "invite", "member": bob.id})
+        self.assertEqual(resp.status_code, 404)
+
     # --- guards ---
 
     def test_cancel_sends_nothing(self):
