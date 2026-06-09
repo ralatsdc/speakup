@@ -151,11 +151,11 @@ def upcoming_meetings_with_open_role(role, now=None):
     )
 
 
-def send_role_invite(member, role, edits=None, now=None):
-    """Invite ``member`` to sign up for ``role`` at an upcoming meeting. Lists
-    the upcoming meetings that currently have that role open (generic nudge if
-    none do). ``edits`` optionally overrides the subject/body. Returns the
-    number of open upcoming meetings listed.
+def send_role_invite(member, roles, edits=None, now=None):
+    """Invite ``member`` to sign up for one of ``roles`` at an upcoming meeting.
+    Lists, per role, the upcoming meetings that currently have it open (generic
+    nudge if none do). ``edits`` optionally overrides the subject/body. Returns
+    the number of distinct open upcoming meetings listed.
 
     The caller is responsible for not inviting when there are no upcoming
     meetings at all (the button is disabled in that case).
@@ -163,13 +163,14 @@ def send_role_invite(member, role, edits=None, now=None):
     from .emails import build_invite_draft
     from communications.emails import render_messages
 
-    draft = build_invite_draft(member, role, now=now)
+    draft = build_invite_draft(member, roles, now=now)
     messages = render_messages(draft["groups"], edits)
     try:
         send_mass_mail(messages, fail_silently=False)
     except Exception:
         logger.exception(
-            "Failed to send role invite to user=%s role=%s", member, role
+            "Failed to send role invite to user=%s roles=%s", member,
+            [r.id for r in roles]
         )
         raise
     return draft["open_count"]

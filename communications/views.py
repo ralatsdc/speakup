@@ -69,23 +69,36 @@ def _resolve_handler(workflow, request):
     if workflow == "invite":
         from members.models import User
         from meetings.models import Role
-        from meetings.emails import build_invite_draft
+        from meetings.emails import build_invite_draft, role_phrase
         from meetings.utils import send_role_invite
 
         member = get_object_or_404(User, pk=p.get("member"))
-        role = get_object_or_404(Role, pk=p.get("role"), show_on_agenda=True)
+        # Roles arrive either as repeated ``role=1&role=2`` (the activity-report
+        # checkboxes) or comma-joined ``roles=1,2`` (round-tripped through the
+        # review form's single hidden field). De-dupe, preserve order.
+        raw = p.getlist("role") or (p.get("roles") or "").split(",")
+        role_ids = []
+        for x in raw:
+            if x.isdigit() and int(x) not in role_ids:
+                role_ids.append(int(x))
+        if not role_ids:
+            raise Http404("No roles selected")
+        roles = [get_object_or_404(Role, pk=rid, show_on_agenda=True)
+                 for rid in role_ids]
+        phrase = role_phrase(roles)
 
         def send(edits):
-            n = send_role_invite(member, role, edits)
+            n = send_role_invite(member, roles, edits)
             if n:
-                return (f"Invited {member} to take {role.name} "
-                        f"({n} upcoming meeting{'s' if n != 1 else ''} with it open).")
-            return (f"Invited {member} to take {role.name} (linked to the sign-up "
-                    f"page; no upcoming meeting currently has it open).")
-        return {"params": {"workflow": workflow, "member": member.id, "role": role.id},
+                return (f"Invited {member} to take {phrase} "
+                        f"({n} upcoming meeting{'s' if n != 1 else ''} with an open slot).")
+            return (f"Invited {member} to take {phrase} (linked to the sign-up "
+                    f"page; no upcoming meeting currently has these open).")
+        return {"params": {"workflow": workflow, "member": member.id,
+                           "roles": ",".join(str(r.id) for r in roles)},
                 "default_back": reverse(
                     "admin:members_user_activity_report_detail", args=[member.id]),
-                "build": lambda: build_invite_draft(member, role), "send": send}
+                "build": lambda: build_invite_draft(member, roles), "send": send}
 
     return None
 
