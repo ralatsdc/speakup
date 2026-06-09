@@ -41,6 +41,14 @@ class EmailReviewTest(TestCase):
         self.assertContains(resp, "Assigned members")
         self.assertContains(resp, "Open-role nudge")
 
+    def test_get_shows_rendered_html_preview(self):
+        # The assignee body uses **{role}**; the preview is server-rendered HTML
+        # (not source text), and the live-edit Markdown lib is loaded.
+        m, *_ = self._meeting()
+        resp = self.client.get(self.url, {"workflow": "reminders", "meeting": m.id})
+        self.assertContains(resp, "<strong>Toastmaster</strong>")
+        self.assertContains(resp, "marked.min.js")
+
     def test_reminders_post_applies_edits(self):
         m, *_ = self._meeting()
         resp = self.client.post(self.url, {
@@ -151,7 +159,7 @@ class AnnouncementSendTest(TestCase):
             is_guest=True,
         )
 
-    @patch("communications.utils.send_mass_mail")
+    @patch("communications.emails.send_messages")
     def test_send_to_all(self, mock_send):
         announcement = Announcement.objects.create(
             subject="Hello", body="Test", audience="all"
@@ -161,7 +169,7 @@ class AnnouncementSendTest(TestCase):
         messages = mock_send.call_args[0][0]
         self.assertEqual(len(messages), 3)
 
-    @patch("communications.utils.send_mass_mail")
+    @patch("communications.emails.send_messages")
     def test_send_to_officers(self, mock_send):
         announcement = Announcement.objects.create(
             subject="Officers only", body="Test", audience="officers"
@@ -169,9 +177,9 @@ class AnnouncementSendTest(TestCase):
         announcement.send()
         messages = mock_send.call_args[0][0]
         self.assertEqual(len(messages), 1)
-        self.assertEqual(messages[0][3], ["officer@example.com"])
+        self.assertEqual(messages[0].to, ["officer@example.com"])
 
-    @patch("communications.utils.send_mass_mail")
+    @patch("communications.emails.send_messages")
     def test_send_to_guests(self, mock_send):
         announcement = Announcement.objects.create(
             subject="Guests only", body="Test", audience="guests"
@@ -179,4 +187,57 @@ class AnnouncementSendTest(TestCase):
         announcement.send()
         messages = mock_send.call_args[0][0]
         self.assertEqual(len(messages), 1)
-        self.assertEqual(messages[0][3], ["guest@example.com"])
+        self.assertEqual(messages[0].to, ["guest@example.com"])
+
+
+class MarkdownRenderingTest(TestCase):
+    """Bodies are authored in Markdown; emails carry a clean plain-text part
+    plus an HTML alternative."""
+
+    def test_to_html_renders_markdown(self):
+        from .emails import to_html
+
+        html = to_html("Hi **there**, see [signups](https://x.test/s) — 🎉")
+        self.assertIn("<strong>there</strong>", html)
+        self.assertIn('<a href="https://x.test/s">signups</a>', html)
+        self.assertIn("🎉", html)
+
+    def test_to_text_strips_markdown(self):
+        from .emails import to_text
+
+        text = to_text("Hi **there**, see [signups](https://x.test/s) — 🎉")
+        self.assertNotIn("**", text)
+        self.assertNotIn("](", text)
+        self.assertIn("there", text)
+        self.assertIn("signups (https://x.test/s)", text)
+        self.assertIn("🎉", text)
+
+    def test_build_messages_attaches_html_alternative(self):
+        from .emails import build_messages
+
+        groups = [{
+            "key": "all", "subject": "Subject 🎉",
+            "body": "Hello **{first_name}**",
+            "recipients": [{"email": "a@b.test", "name": "Al",
+                            "context": {"first_name": "Al"}}],
+        }]
+        [msg] = build_messages(groups)
+        # Plain-text body has the markers stripped...
+        self.assertEqual(msg.body, "Hello Al")
+        self.assertEqual(msg.subject, "Subject 🎉")
+        # ...and there's exactly one text/html alternative with real bold.
+        self.assertEqual(len(msg.alternatives), 1)
+        html, mimetype = msg.alternatives[0]
+        self.assertEqual(mimetype, "text/html")
+        self.assertIn("<strong>Al</strong>", html)
+
+    def test_announcement_email_is_multipart_with_bold(self):
+        User.objects.create_user(
+            username="m", password="pw", email="m@example.com", first_name="Mo")
+        ann = Announcement.objects.create(
+            subject="News", body="Hi **{first_name}** 🎉", audience="all")
+        ann.send()
+        self.assertEqual(len(mail.outbox), 1)
+        msg = mail.outbox[0]
+        self.assertEqual(msg.body, "Hi Mo 🎉")  # plain text, no markers
+        self.assertIn("<strong>Mo</strong>", msg.alternatives[0][0])

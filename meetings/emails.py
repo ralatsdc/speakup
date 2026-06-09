@@ -1,12 +1,13 @@
 """
 Draft builders for the meeting-related review-gated emails (reminders,
 feedback, role invites). Each returns the uniform draft structure documented
-in ``communications.emails``. The actual ``send_mass_mail`` call lives in
-``meetings.utils`` (so test patch targets stay put); these only build.
+in ``communications.emails``. The actual ``send_messages`` call lives in
+``meetings.utils``; these only build.
 
 Fan-out workflows (reminders, feedback) expose editable templates with
 ``{placeholders}`` so the shared text can be tweaked once and rendered per
 recipient. The single-recipient invite is pre-rendered to clean literal text.
+Bodies are authored in Markdown (rendered to HTML at send time).
 """
 
 from django.conf import settings

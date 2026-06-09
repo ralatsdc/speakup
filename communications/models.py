@@ -11,7 +11,10 @@ class Announcement(models.Model):
     ]
 
     subject = models.CharField(max_length=200)
-    body = models.TextField(help_text="Write your message here.")
+    body = models.TextField(
+        help_text="Write your message here. Markdown is supported "
+        "(**bold**, *italic*, [links](https://…), - lists) along with emojis "
+        "and the {first_name} placeholder.")
     audience = models.CharField(max_length=20, choices=AUDIENCE_CHOICES, default="all")
     created_at = models.DateTimeField(auto_now_add=True)
     sent_at = models.DateTimeField(null=True, blank=True)
