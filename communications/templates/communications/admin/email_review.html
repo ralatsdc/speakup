@@ -26,7 +26,10 @@
             border: 1px solid var(--hairline-color, #eee); border-radius: 4px;
             padding: 0.6em 0.8em; margin-top: 0.6em; }
         .email-review .preview .psubj { font-weight: 600; }
-        .email-review .preview .pbody { white-space: pre-wrap; margin-top: 0.4em; }
+        .email-review .preview .pbody { margin-top: 0.4em; }
+        .email-review .preview .pbody > :first-child { margin-top: 0; }
+        .email-review .preview .pbody > :last-child { margin-bottom: 0; }
+        .email-review .preview .pbody p { margin: 0 0 0.6em; }
         .email-review details { margin-top: 0.6em; }
         .email-review .actions { margin-top: 1em; }
         .email-review .actions .cancel { margin-left: 0.6em; }
@@ -41,7 +44,7 @@
         <p class="help" style="color:var(--body-quiet-color,#666);">
             Bodies are written in <strong>Markdown</strong> — <code>**bold**</code>,
             <code>*italic*</code>, <code>[links](https://…)</code>, and <code>- lists</code>
-            render as formatted HTML in the email (the preview below shows the source text).
+            render as formatted HTML in the email — exactly as shown in the live preview below.
             Emojis work too. 🎉</p>
 
         <form method="post" action="{% url 'email_review' %}">
@@ -71,7 +74,7 @@
                         <div class="muted" style="font-size:0.85em;color:var(--body-quiet-color,#666);">
                             Preview{% if group.sample_name %} — for {{ group.sample_name }}{% endif %}</div>
                         <div class="psubj" id="psubj_{{ group.key }}">{{ group.preview_subject }}</div>
-                        <div class="pbody" id="pbody_{{ group.key }}">{{ group.preview_body }}</div>
+                        <div class="pbody" id="pbody_{{ group.key }}">{{ group.preview_body_html|safe }}</div>
                     </div>
 
                     <details>
@@ -96,8 +99,13 @@
     {% endif %}
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/marked@15/marked.min.js"></script>
 <script>
 (function () {
+    // Match the server's Markdown render (nl2br): single newlines -> <br>.
+    function renderMarkdown(text) {
+        return window.marked ? window.marked.parse(text, { breaks: true, gfm: true }) : text;
+    }
     function subst(template, ctx) {
         return template.replace(/\{(\w+)\}/g, function (m, k) {
             return Object.prototype.hasOwnProperty.call(ctx, k) ? ctx[k] : "";
@@ -112,7 +120,8 @@
         var pbody = document.getElementById("pbody_" + key);
         function update() {
             psubj.textContent = subst(subj.value, ctx);
-            pbody.textContent = subst(body.value, ctx);
+            // Body is Markdown -> rendered HTML, mirroring the sent email.
+            pbody.innerHTML = renderMarkdown(subst(body.value, ctx));
         }
         subj.addEventListener("input", update);
         body.addEventListener("input", update);

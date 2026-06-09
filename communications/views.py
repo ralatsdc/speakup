@@ -14,7 +14,7 @@ from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 
-from .emails import render as render_template, total_recipients
+from .emails import render as render_template, to_html, total_recipients
 
 
 def _resolve_handler(workflow, request):
@@ -121,7 +121,9 @@ def _attach_previews(groups):
         g["sample_name"] = sample["name"] if sample else ""
         g["sample_context_json"] = json.dumps(ctx, default=str)
         g["preview_subject"] = render_template(g["subject"], ctx)
-        g["preview_body"] = render_template(g["body"], ctx)
+        # Server-rendered HTML for the first paint (and a no-JS fallback); the
+        # client re-renders Markdown live as the body is edited.
+        g["preview_body_html"] = to_html(render_template(g["body"], ctx))
 
 
 @staff_member_required

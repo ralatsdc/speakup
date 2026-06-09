@@ -41,6 +41,14 @@ class EmailReviewTest(TestCase):
         self.assertContains(resp, "Assigned members")
         self.assertContains(resp, "Open-role nudge")
 
+    def test_get_shows_rendered_html_preview(self):
+        # The assignee body uses **{role}**; the preview is server-rendered HTML
+        # (not source text), and the live-edit Markdown lib is loaded.
+        m, *_ = self._meeting()
+        resp = self.client.get(self.url, {"workflow": "reminders", "meeting": m.id})
+        self.assertContains(resp, "<strong>Toastmaster</strong>")
+        self.assertContains(resp, "marked.min.js")
+
     def test_reminders_post_applies_edits(self):
         m, *_ = self._meeting()
         resp = self.client.post(self.url, {
