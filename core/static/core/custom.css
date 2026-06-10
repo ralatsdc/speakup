@@ -1,0 +1,134 @@
+/* --- Direction A: "Take the Floor" -------------------------------------
+   Warm and reassuring. The page's one job is to make a nervous visitor
+   feel they belong before they've said a word. Bootstrap recolored via
+   CSS variables. */
+:root {
+  --bs-primary: #004165;          /* Toastmasters "Loyal" blue */
+  --bs-primary-rgb: 0, 65, 101;
+  --bs-link-color-rgb: 0, 65, 101;
+  --bs-link-hover-color-rgb: 0, 49, 76;
+  --bs-body-font-family: "Inter", system-ui, sans-serif;
+  --bs-body-color: #2b3a44;
+
+  --sail: #FAF7F2;   /* warm off-white */
+  --maroon: #772432;
+  --gold: #E0A458;
+}
+body { background: var(--sail); }
+h1,h2,h3,.display-5,.navbar-brand { font-family: "Bricolage Grotesque", sans-serif; }
+
+.btn-primary {
+  --bs-btn-bg: #004165; --bs-btn-border-color: #004165;
+  --bs-btn-hover-bg: #00314c; --bs-btn-hover-border-color: #00314c;
+  --bs-btn-active-bg: #00263b; --bs-btn-active-border-color: #00263b;
+  --bs-btn-padding-x: 1.4rem; --bs-btn-padding-y: .7rem; --bs-btn-font-weight: 600;
+}
+.btn-outline-primary {
+  --bs-btn-color: #004165; --bs-btn-border-color: #c9d6dd;
+  --bs-btn-hover-bg: #004165; --bs-btn-hover-border-color: #004165;
+  --bs-btn-padding-x: 1.4rem; --bs-btn-padding-y: .7rem; --bs-btn-font-weight: 600;
+}
+.btn { border-radius: 999px; }
+
+.navbar-brand { font-weight: 700; letter-spacing: -.01em; }
+
+.hero { padding: 4.5rem 0 3rem; }
+.hero h1 { font-weight: 700; letter-spacing: -.02em; line-height: 1.04; }
+.lead-q { font-size: 1.25rem; color: #4a5862; }
+.photo-frame {
+  border-radius: 1.25rem; overflow: hidden;
+  box-shadow: 0 24px 60px -28px rgba(0,65,101,.45);
+  border: 6px solid #fff; transform: rotate(-1.2deg);
+}
+.photo-frame img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.guest-pill {
+  display: inline-flex; align-items: center; gap: .5rem;
+  background: #fff; border: 1px solid #ecdfce; color: var(--maroon);
+  font-weight: 600; padding: .4rem .9rem; border-radius: 999px; font-size: .9rem;
+}
+
+.night-card {
+  background: #fff; border: 1px solid #efe7db; border-radius: 1.1rem;
+  padding: 1.6rem; height: 100%; transition: transform .2s ease, box-shadow .2s ease;
+}
+.night-card:hover { transform: translateY(-4px); box-shadow: 0 18px 40px -24px rgba(0,65,101,.4); }
+.night-emoji { font-size: 1.9rem; }
+.night-card h3 { font-size: 1.15rem; font-weight: 600; }
+
+.meeting-row {
+  background: #fff; border: 1px solid #efe7db; border-radius: .9rem;
+  padding: 1rem 1.25rem; display: flex; align-items: center; gap: 1rem;
+  transition: border-color .2s ease;
+}
+.meeting-row:hover { border-color: var(--gold); }
+.date-chip {
+  flex: 0 0 auto; width: 56px; text-align: center; line-height: 1;
+  background: #f4ece0; border-radius: .6rem; padding: .5rem 0; color: var(--maroon);
+}
+.date-chip .d { font-family: "Bricolage Grotesque"; font-size: 1.4rem; font-weight: 700; }
+.date-chip .m { font-size: .7rem; text-transform: uppercase; letter-spacing: .08em; }
+
+.invite-band {
+  background: var(--maroon); color: #fff; border-radius: 1.5rem;
+  padding: 3rem; text-align: center;
+}
+.invite-band h2 { font-weight: 700; }
+.invite-band .btn-light { --bs-btn-color: var(--maroon); font-weight: 600; border-radius: 999px; padding: .7rem 1.6rem; }
+
+footer { color: #6b7780; font-size: .9rem; }
+
+@media (prefers-reduced-motion: reduce) {
+  .night-card, .meeting-row { transition: none; }
+}
+
+/* === Shared app components ==============================================
+   The landing page's look, generalized so every page that extends
+   base.html shares the same warm, rounded, soft-shadowed language. */
+
+/* Cards — echo .night-card: warm hairline border, generous radius, and a
+   soft blue-tinted shadow instead of Bootstrap's hard grey one. overflow
+   keeps flush tables clipped to the rounded corners. */
+.card {
+  border: 1px solid #efe7db;
+  border-radius: 1.1rem;
+  box-shadow: 0 14px 36px -26px rgba(0,65,101,.4);
+  overflow: hidden;
+}
+.card-header {
+  background: #fff;
+  border-bottom: 1px solid #efe7db;
+  font-family: "Bricolage Grotesque", sans-serif;
+  font-weight: 600;
+}
+.card-footer { background: #fff; border-top: 1px solid #efe7db; }
+
+/* Brand-colored header variants keep their fill; just drop the hairline. */
+.card-header.bg-primary,
+.card-header.bg-success { border-bottom-color: transparent; }
+
+/* Tables — warm the striped / "light" head tones to the off-white palette. */
+.table { --bs-table-border-color: #efe7db; }
+.table-light { --bs-table-bg: #f7f1e8; --bs-table-border-color: #efe7db; }
+
+/* Theme tag — the warm gold/maroon pill for meeting themes, replacing
+   Bootstrap's grey secondary badge. */
+.theme-badge {
+  background: #f4ece0; color: var(--maroon);
+  font-weight: 600; border-radius: 999px;
+  padding: .35rem .8rem; font-size: .8rem;
+}
+
+/* Page header — left-aligned title + muted standfirst at the top of
+   interior pages, rhyming with the hero/section headings. */
+.page-header { margin-bottom: 2rem; }
+.page-header h1 { font-weight: 700; letter-spacing: -.02em; }
+
+/* Long-form prose (help guides): a bit more air and warm rules. */
+.prose h2 { margin-top: 2.25rem; }
+.prose h4 { margin-top: 1.5rem; font-weight: 600; }
+.prose hr { border-color: #efe7db; opacity: 1; margin: 2rem 0; }
+
+/* Gentle entrance for HTMX-swapped success states (kiosk guest check-in). */
+@keyframes fade-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.fade-in { animation: fade-in .4s ease both; }
+@media (prefers-reduced-motion: reduce) { .fade-in { animation: none; } }

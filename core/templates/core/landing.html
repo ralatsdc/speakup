@@ -1,56 +1,112 @@
 {% extends 'base.html' %}
 
 {% block content %}
-<div class="row">
-    <div class="col-lg-8 mx-auto">
-        <!-- About Us -->
-        <section class="mb-5">
-            <h1 class="mb-4">Speak Up Cambridge</h1>
-            <img src="https://secure.meetupstatic.com/photos/event/9/b/1/6/clean_417219702.webp"
-                 alt="Speak Up Cambridge group photo"
-                 class="img-fluid rounded mb-4" style="max-width: 500px;">
-            <h2 class="mb-3">About Us</h2>
-            <p class="lead">
-                Are you paralyzed by the mere thought of standing in front of an audience,
-                speaking up at a meeting, presenting your ideas or pitching your business concept?
-            </p>
-            <p>
-                At Speak Up Cambridge, we help members overcome public speaking anxiety through
-                fast-paced, engaging meetups. We follow the Toastmasters International curriculum
-                while adding our own variations. Meetings feature prepared speeches, impromptu
-                speaking exercises, and a 30-second introduction round.
-            </p>
-            <p>
-                We meet on the 2nd and 4th Wednesday of each month from 6:45&ndash;8:45 PM,
-                with both in-person and online options available. Visitors can attend free as guests.
-            </p>
-            <p>
-                <a href="https://www.meetup.com/speak-up-cambridge/" class="btn btn-primary" target="_blank" rel="noopener">
-                    Join us on Meetup
-                </a>
-            </p>
-        </section>
-
-        <!-- Upcoming Meetings -->
-        <section class="mb-5">
-            <h2 class="mb-4">Upcoming Meetings</h2>
-            {% if meetings %}
-                <ul class="list-group">
-                    {% for meeting in meetings %}
-                    <li class="list-group-item">
-                        <a href="{% url 'meeting_agenda' meeting.id %}">
-                            {{ meeting.date|date:"l, F jS, Y" }} at {{ meeting.date|date:"g:i A" }}
-                        </a>
-                        {% if meeting.theme %}
-                            <span class="badge bg-secondary ms-2">{{ meeting.theme }}</span>
-                        {% endif %}
-                    </li>
-                    {% endfor %}
-                </ul>
-            {% else %}
-                <p class="text-muted">No upcoming meetings scheduled. Check back soon!</p>
-            {% endif %}
-        </section>
+<!-- HERO -->
+<header class="hero">
+  <div class="container">
+    <div class="row align-items-center g-5">
+      <div class="col-lg-6">
+        <span class="guest-pill">🎟️ Guests always welcome</span>
+        <h1 class="display-5 mt-3 mb-3">Nervous about speaking?<br>You're in exactly the right room.</h1>
+        <p class="lead-q mb-4">
+          If standing up to present, pitch, or just speak in a meeting fills you with dread —
+          that's precisely why we're here. Come find your voice with a friendly group in Cambridge.
+        </p>
+        <div class="d-flex flex-wrap gap-2">
+          <a class="btn btn-primary btn-lg" href="https://www.meetup.com/speak-up-cambridge/" target="_blank" rel="noopener">Join us on Meetup</a>
+          <a class="btn btn-outline-primary btn-lg" href="#meetings">See upcoming meetings</a>
+        </div>
+        <p class="text-muted small mt-3 mb-0">2nd &amp; 4th Wednesdays · 6:45–8:45&nbsp;PM · In-person &amp; online</p>
+      </div>
+      <div class="col-lg-6">
+        <div class="photo-frame">
+          <img src="https://secure.meetupstatic.com/photos/event/9/b/1/6/clean_417219702.webp"
+               alt="Members of Speak Up Cambridge gathered together at a meetup">
+        </div>
+      </div>
     </div>
-</div>
+  </div>
+</header>
+
+<!-- WHAT A NIGHT LOOKS LIKE -->
+<section class="py-5">
+  <div class="container">
+    <div class="text-center mb-4">
+      <h2 class="fw-bold">What a night looks like</h2>
+      <p class="text-muted mb-0">Fast-paced and friendly — you can watch, or jump in. Always your call.</p>
+    </div>
+    <div class="row g-3 g-lg-4">
+      <div class="col-md-4">
+        <div class="night-card">
+          <div class="night-emoji">🗣️</div>
+          <h3 class="mt-2">Prepared speeches</h3>
+          <p class="text-muted mb-0">Members work through the Toastmasters Pathways curriculum, one short speech at a time. Supportive feedback, never a grade.</p>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="night-card">
+          <div class="night-emoji">🎲</div>
+          <h3 class="mt-2">Table Topics</h3>
+          <p class="text-muted mb-0">Quick, low-stakes impromptu speaking. The best practice for thinking on your feet — and surprisingly fun.</p>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="night-card">
+          <div class="night-emoji">⏱️</div>
+          <h3 class="mt-2">30-second intros</h3>
+          <p class="text-muted mb-0">Everyone gets the floor for half a minute. A gentle on-ramp so your very first time speaking is easy.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- UPCOMING MEETINGS -->
+<section class="py-5" id="meetings">
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 mx-auto">
+        <h2 class="fw-bold mb-4">Upcoming meetings</h2>
+        {% if meetings %}
+          <div class="d-flex flex-column gap-2">
+            {% for meeting in meetings %}
+            <a class="meeting-row text-decoration-none text-body" href="{% url 'meeting_agenda' meeting.id %}">
+              <div class="date-chip">
+                <div class="d">{{ meeting.date|date:"j" }}</div>
+                <div class="m">{{ meeting.date|date:"M" }}</div>
+              </div>
+              <div>
+                <div class="fw-semibold">{{ meeting.date|date:"l, F jS" }} · {{ meeting.date|date:"g:i A" }}</div>
+                {% if meeting.theme %}
+                  <div class="text-muted small">Theme: {{ meeting.theme }}</div>
+                {% endif %}
+              </div>
+            </a>
+            {% endfor %}
+          </div>
+        {% else %}
+          <p class="text-muted">No upcoming meetings scheduled. Check back soon!</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- INVITE BAND -->
+<section class="py-5">
+  <div class="container">
+    <div class="invite-band">
+      <h2 class="mb-2">Come as our guest — as often as you like</h2>
+      <p class="mb-4 opacity-75">Visiting is always free, with no commitment. There's never any pressure to speak — but you're invited to jump into the improv or round-robin. Members take the meeting roles; guests enjoy the night.</p>
+      <a class="btn btn-light btn-lg" href="https://www.meetup.com/speak-up-cambridge/" target="_blank" rel="noopener">Join us on Meetup</a>
+    </div>
+  </div>
+</section>
+
+<footer class="py-4 border-top">
+  <div class="container d-flex flex-wrap justify-content-between gap-2">
+    <span>Speak Up Cambridge · A Toastmasters club</span>
+    <span>2nd &amp; 4th Wednesdays · 6:45–8:45 PM</span>
+  </div>
+</footer>
 {% endblock %}

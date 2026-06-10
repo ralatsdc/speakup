@@ -1,11 +1,12 @@
 {% extends "base.html" %}
 
 {% block content %}
-<h1 class="mb-4">Admin Guide</h1>
-
-<p class="lead">This guide covers the administrative features of SpeakUp. Admin access requires a staff account. All admin tasks are performed through the <a href="/admin/">Django admin panel</a>.</p>
-
-<hr>
+<div class="row">
+<div class="col-lg-9 mx-auto prose">
+<div class="page-header">
+    <h1>Admin Guide</h1>
+    <p class="lead text-muted mb-0">This guide covers the administrative features of SpeakUp. Admin access requires a staff account. All admin tasks are performed through the <a href="/admin/">Django admin panel</a>.</p>
+</div>
 
 <h2>Getting Started</h2>
 <p>You'll see an <strong>Admin</strong> link in the navigation bar that takes you to the <a href="/admin/">admin panel</a>.</p>
@@ -173,4 +174,6 @@
     <li>The <a href="/admin/meetings/attendance/">Attendance</a> admin supports filtering by meeting and by whether a user was present, making it easy to review attendance for specific meetings.</li>
     <li>When creating a meeting, the sessions and roles are populated automatically from the meeting type &mdash; you only need to adjust assignments and notes.</li>
 </ul>
+</div>
+</div>
 {% endblock %}

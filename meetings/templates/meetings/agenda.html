@@ -13,7 +13,7 @@
 
         <!-- Theme & Word of the Day -->
         {% if meeting.theme or meeting.word_of_the_day %}
-        <div class="card shadow-sm mb-4">
+        <div class="card mb-4">
             <div class="card-body text-center">
                 {% if meeting.theme %}
                     <p class="mb-1"><strong>Theme:</strong> {{ meeting.theme }}</p>
@@ -27,7 +27,7 @@
 
         <!-- Agenda Sections -->
         {% for section in sections %}
-        <div class="card shadow-sm mb-4">
+        <div class="card mb-4">
             {% if section.session %}
             <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
                 <strong>{{ section.session.name }}</strong>
@@ -100,18 +100,14 @@
         </div>
         {% endfor %}
 
-        <!-- Zoom Link -->
-        {% if meeting.zoom_link %}
-        <div class="text-center mb-4">
-            <a href="{{ meeting.zoom_link }}" class="btn btn-outline-primary" target="_blank">
+        <!-- Actions -->
+        <div class="text-center mb-4 d-flex flex-wrap justify-content-center gap-2">
+            {% if meeting.zoom_link %}
+            <a href="{{ meeting.zoom_link }}" class="btn btn-primary" target="_blank">
                 Join via Zoom
             </a>
-        </div>
-        {% endif %}
-
-        <!-- Download Button -->
-        <div class="text-center mb-4">
-            <a href="{% url 'meeting_agenda_download' meeting.id %}" class="btn btn-secondary">
+            {% endif %}
+            <a href="{% url 'meeting_agenda_download' meeting.id %}" class="btn btn-outline-primary">
                 Download Agenda (.docx)
             </a>
         </div>
