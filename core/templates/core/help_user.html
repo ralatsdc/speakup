@@ -1,11 +1,12 @@
 {% extends "base.html" %}
 
 {% block content %}
-<h1 class="mb-4">Member Guide</h1>
-
-<p class="lead">Welcome to SpeakUp, the Speak Up Cambridge Toastmasters club management app. This guide covers everything you can do as a club member.</p>
-
-<hr>
+<div class="row">
+<div class="col-lg-9 mx-auto prose">
+<div class="page-header">
+    <h1>Member Guide</h1>
+    <p class="lead text-muted mb-0">Welcome to SpeakUp, the Speak Up Cambridge Toastmasters club management app. This guide covers everything you can do as a club member.</p>
+</div>
 
 <h2>Viewing Upcoming Meetings and Roles</h2>
 <p>The <a href="{% url 'role_signups' %}">Roles page</a> (the "Roles" link in the menu) shows upcoming meetings. Each meeting displays:</p>
@@ -105,4 +106,6 @@
         <tr><td>Reset your password</td><td>Click <a href="{% url 'password_reset' %}">"Forgot your password?"</a> on the login page</td></tr>
     </tbody>
 </table>
+</div>
+</div>
 {% endblock %}
