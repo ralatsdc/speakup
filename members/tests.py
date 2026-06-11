@@ -3,15 +3,139 @@ from datetime import timedelta
 from django.contrib.auth.models import Group
 from django.core import mail
 from django.db import IntegrityError
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
 from meetings.models import Meeting, MeetingRole, Role
 
+from django.contrib.auth import authenticate
+
 from .admin import CustomUserCreationForm, make_officer, remove_officer
 from .models import User
+from .emails import send_welcome_email
 from .signals import OFFICERS_GROUP_NAME
+from .tokens import make_login_token
+
+
+class EmailBackendTest(TestCase):
+    """Members authenticate by email; usernames stay internal but still work
+    for the admin via the ModelBackend fallback."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="auto.generated", email="member@example.com", password="secret"
+        )
+
+    def test_login_by_email(self):
+        self.assertEqual(
+            authenticate(username="member@example.com", password="secret"), self.user
+        )
+
+    def test_login_by_email_is_case_insensitive(self):
+        self.assertEqual(
+            authenticate(username="Member@Example.COM", password="secret"), self.user
+        )
+
+    def test_wrong_password_rejected(self):
+        self.assertIsNone(
+            authenticate(username="member@example.com", password="nope")
+        )
+
+    def test_unknown_email_rejected(self):
+        self.assertIsNone(
+            authenticate(username="ghost@example.com", password="secret")
+        )
+
+    def test_username_login_still_works_for_admin(self):
+        # ModelBackend fallback keeps Django admin's username login functional.
+        self.assertEqual(
+            authenticate(username="auto.generated", password="secret"), self.user
+        )
+
+    def test_inactive_user_rejected(self):
+        self.user.is_active = False
+        self.user.save()
+        self.assertIsNone(
+            authenticate(username="member@example.com", password="secret")
+        )
+
+
+class LoginPageTest(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="auto.gen", email="member@example.com", password="secret"
+        )
+
+    def test_password_login_by_email(self):
+        resp = self.client.post(
+            reverse("login"),
+            {"username": "member@example.com", "password": "secret"},
+        )
+        self.assertEqual(resp.status_code, 302)
+        self.assertEqual(int(self.client.session["_auth_user_id"]), self.user.pk)
+
+
+class MagicLinkTest(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="auto.gen", email="member@example.com", password="secret",
+            first_name="Mem",
+        )
+
+    def test_request_sends_link_for_known_email(self):
+        resp = self.client.post(
+            reverse("magic_link_request"), {"email": "member@example.com"}
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn("/accounts/magic-link/", mail.outbox[0].body)
+
+    def test_request_unknown_email_sends_nothing_but_same_page(self):
+        # No user enumeration: identical response, no email sent.
+        resp = self.client.post(
+            reverse("magic_link_request"), {"email": "ghost@example.com"}
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_valid_link_logs_in(self):
+        token = make_login_token(self.user)
+        resp = self.client.get(reverse("magic_link_login", args=[token]))
+        self.assertEqual(resp.status_code, 302)
+        self.assertEqual(int(self.client.session["_auth_user_id"]), self.user.pk)
+
+    def test_tampered_token_rejected(self):
+        resp = self.client.get(reverse("magic_link_login", args=["not-a-token"]))
+        self.assertEqual(resp.status_code, 400)
+        self.assertNotIn("_auth_user_id", self.client.session)
+
+    @override_settings(MAGIC_LINK_MAX_AGE=-1)
+    def test_expired_link_rejected(self):
+        token = make_login_token(self.user)
+        resp = self.client.get(reverse("magic_link_login", args=[token]))
+        self.assertEqual(resp.status_code, 400)
+
+    def test_password_change_invalidates_outstanding_link(self):
+        token = make_login_token(self.user)
+        self.user.set_password("changed")
+        self.user.save()
+        resp = self.client.get(reverse("magic_link_login", args=[token]))
+        self.assertEqual(resp.status_code, 400)
+
+
+class WelcomeEmailTest(TestCase):
+    def test_welcome_email_points_to_login(self):
+        user = User.objects.create_user(
+            username="auto.gen", email="member@example.com", password="x",
+            first_name="Mem",
+        )
+        sent = send_welcome_email(user)
+        self.assertEqual(sent, 1)
+        self.assertEqual(len(mail.outbox), 1)
+        body = mail.outbox[0].body
+        self.assertIn(reverse("login"), body)
+        self.assertIn("member@example.com", body)
 
 
 class UserModelTest(TestCase):

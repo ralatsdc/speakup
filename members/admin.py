@@ -4,6 +4,7 @@ from django.contrib.auth.forms import UserCreationForm
 from django.urls import path
 from import_export.admin import ImportExportModelAdmin
 
+from .emails import send_welcome_email
 from .models import User
 from .resources import UserResource
 from .views import activity_report, activity_report_detail
@@ -75,6 +76,21 @@ def remove_active(modeladmin, request, queryset):
     queryset = queryset.exclude(pk=request.user.pk)
     count = queryset.update(is_active=False)
     modeladmin.message_user(request, f"{count} user(s) unmarked as active.")
+
+
+@admin.action(description="Send welcome email")
+def send_welcome_emails(modeladmin, request, queryset):
+    sent = 0
+    skipped = 0
+    for user in queryset:
+        if user.email:
+            sent += send_welcome_email(user)
+        else:
+            skipped += 1
+    msg = f"Welcome email sent to {sent} member(s)."
+    if skipped:
+        msg += f" Skipped {skipped} without an email address."
+    modeladmin.message_user(request, msg)
 
 
 class CustomUserAdmin(ImportExportModelAdmin, UserAdmin):
@@ -158,7 +174,7 @@ class CustomUserAdmin(ImportExportModelAdmin, UserAdmin):
     # Search bar capability
     search_fields = ("username", "first_name", "last_name", "email")
 
-    actions = [make_guest, remove_guest, make_officer, remove_officer, make_active, remove_active]
+    actions = [make_guest, remove_guest, make_officer, remove_officer, make_active, remove_active, send_welcome_emails]
 
     def get_urls(self):
         urls = super().get_urls()
