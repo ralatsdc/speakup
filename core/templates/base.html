@@ -23,7 +23,6 @@
             <div class="navbar-nav ms-auto">
                 <a class="nav-link" href="{% url 'role_signups' %}">Roles</a>
                 {% if user.is_authenticated %}
-                    <span class="nav-link text-white">Hello, {{ user.first_name|default:user.username }}</span>
                     <a class="nav-link" href="{% url 'help' %}">Help</a>
 
                     {% if user.is_officer or user.is_superuser %}
@@ -35,11 +34,22 @@
                         <a class="nav-link" href="/admin/">Admin</a>
                     {% endif %}
 
-                    <!-- Add a logout button -->
-                    <form action="{% url 'logout' %}" method="post" class="d-inline">
-                        {% csrf_token %}
-                        <button class="btn nav-link" type="submit">Logout</button>
-                    </form>
+                    <div class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle text-white" href="#" id="accountMenu"
+                           role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                            Hello, {{ user.first_name|default:user.email }}
+                        </a>
+                        <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="accountMenu">
+                            <li><a class="dropdown-item" href="{% url 'account' %}">Account</a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li>
+                                <form action="{% url 'logout' %}" method="post">
+                                    {% csrf_token %}
+                                    <button class="dropdown-item" type="submit">Logout</button>
+                                </form>
+                            </li>
+                        </ul>
+                    </div>
                 {% else %}
                     <a class="nav-link" href="{% url 'login' %}">Login</a>
                 {% endif %}

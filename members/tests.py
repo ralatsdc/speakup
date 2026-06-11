@@ -15,7 +15,7 @@ from .admin import CustomUserCreationForm, make_officer, remove_officer
 from .models import User
 from .emails import send_welcome_email
 from .signals import OFFICERS_GROUP_NAME
-from .tokens import make_login_token
+from .tokens import make_email_change_token, make_login_token
 
 
 class EmailBackendTest(TestCase):
@@ -122,6 +122,97 @@ class MagicLinkTest(TestCase):
         self.user.save()
         resp = self.client.get(reverse("magic_link_login", args=[token]))
         self.assertEqual(resp.status_code, 400)
+
+
+class AccountPageTest(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="auto.gen", email="member@example.com", password="x",
+            first_name="Mem", last_name="Ber",
+        )
+        self.client.force_login(self.user)
+
+    def test_requires_login(self):
+        self.client.logout()
+        resp = self.client.get(reverse("account"))
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn(reverse("login"), resp["Location"])
+
+    def test_get_renders(self):
+        self.assertEqual(self.client.get(reverse("account")).status_code, 200)
+
+    def test_update_name(self):
+        resp = self.client.post(
+            reverse("account_profile"), {"first_name": "New", "last_name": "Name"}
+        )
+        self.assertEqual(resp.status_code, 302)
+        self.user.refresh_from_db()
+        self.assertEqual((self.user.first_name, self.user.last_name), ("New", "Name"))
+
+    def test_set_password_keeps_session(self):
+        resp = self.client.post(
+            reverse("account_password"),
+            {"new_password1": "sk8board-ninja-42", "new_password2": "sk8board-ninja-42"},
+        )
+        self.assertEqual(resp.status_code, 302)
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password("sk8board-ninja-42"))
+        # Still authenticated (session hash was refreshed).
+        self.assertEqual(self.client.get(reverse("account")).status_code, 200)
+
+    def test_email_change_request_sends_link_without_changing_email(self):
+        resp = self.client.post(
+            reverse("account_email"), {"new_email": "new@example.com"}
+        )
+        self.assertEqual(resp.status_code, 302)
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.email, "member@example.com")  # unchanged yet
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, ["new@example.com"])
+
+    def test_email_change_rejects_taken_address(self):
+        User.objects.create_user(
+            username="other", email="taken@example.com", password="x"
+        )
+        resp = self.client.post(
+            reverse("account_email"), {"new_email": "taken@example.com"}
+        )
+        self.assertEqual(resp.status_code, 200)  # re-rendered with error
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_email_confirm_applies_change(self):
+        token = make_email_change_token(self.user, "new@example.com")
+        resp = self.client.get(reverse("account_email_confirm", args=[token]))
+        self.assertEqual(resp.status_code, 302)
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.email, "new@example.com")
+
+    def test_email_confirm_rejects_other_users_token(self):
+        other = User.objects.create_user(
+            username="other", email="other@example.com", password="x"
+        )
+        token = make_email_change_token(other, "hijack@example.com")
+        resp = self.client.get(reverse("account_email_confirm", args=[token]))
+        self.assertEqual(resp.status_code, 302)
+        other.refresh_from_db()
+        self.assertEqual(other.email, "other@example.com")  # unchanged
+
+    @override_settings(EMAIL_CHANGE_MAX_AGE=-1)
+    def test_email_confirm_rejects_expired_token(self):
+        token = make_email_change_token(self.user, "new@example.com")
+        self.client.get(reverse("account_email_confirm", args=[token]))
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.email, "member@example.com")
+
+    def test_email_confirm_rejects_now_taken_address(self):
+        token = make_email_change_token(self.user, "new@example.com")
+        # Someone else grabs the address before the link is clicked.
+        User.objects.create_user(
+            username="other", email="new@example.com", password="x"
+        )
+        self.client.get(reverse("account_email_confirm", args=[token]))
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.email, "member@example.com")
 
 
 class WelcomeEmailTest(TestCase):
