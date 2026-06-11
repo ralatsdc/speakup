@@ -38,8 +38,8 @@
                 <form method="post" action="{% url 'magic_link_request' %}">
                     {% csrf_token %}
                     <p class="small text-muted mb-2">
-                        New here, or haven't set a password? Sign in with your email —
-                        we'll send you a one-time link.
+                        Haven't set a password? Enter your email and we'll send you a
+                        one-time sign-in link.
                     </p>
                     <div class="mb-3">
                         <label class="form-label" for="magic_email">Email</label>
