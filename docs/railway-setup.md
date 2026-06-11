@@ -165,7 +165,57 @@ For the very first deploy you'll likely want to:
 3. Create the initial `MeetingType` and template `Session` rows
    (matches what the local fixtures look like).
 
-## 6. Backup mailbox (Gmail)
+## 6. Releases and rollback
+
+Every merge to the production branch **is** a deploy: Railway rebuilds and
+runs the `startCommand` (including `migrate --noinput`). Tag each one so
+"what was live on date X" is reproducible and rollbacks have an exact target.
+
+### Release checklist (per merge to `main`)
+
+1. Pick the SemVer bump (`vMAJOR.MINOR.PATCH`).
+2. Note any **new migrations** the PR adds — this is what decides whether a
+   later rollback needs database work (see below).
+3. Squash-merge the PR → Railway deploys automatically.
+4. Tag the merge commit and push:
+   ```sh
+   git checkout main && git pull
+   git tag -a vX.Y.Z -m "vX.Y.Z — <summary>"
+   git push origin vX.Y.Z
+   ```
+5. Create the GitHub Release (`gh release create vX.Y.Z ...`). In the notes,
+   **list the new migrations** and a one-line rollback note.
+
+### Rolling back to an older release
+
+Code and database roll back **separately**. For the code, easiest first:
+
+- **Railway dashboard** — Deployments → open an older deployment →
+  **Redeploy**. Re-runs that exact build; no git changes.
+- **From a tag** — deploy a specific release directly, bypassing the
+  GitHub trigger:
+  ```sh
+  git checkout vX.Y.Z
+  railway up
+  git switch main
+  ```
+- **`git revert`** the bad commits on `main` and push (forward-only; never
+  force-push `main` backward — it rewrites shared history).
+
+**The catch — the database does not roll back with the code.** `migrate`
+only moves forward, so if the release you're leaving **added or changed
+schema**, older code may run against a newer schema and break or lose data.
+When schema changed, choose one:
+
+- **Preferred:** keep migrations backward-compatible (additive — new nullable
+  columns; no drops/renames alongside the code that needs them), so old code
+  still runs on the new schema and a code-only rollback just works.
+- **Reverse the migration:** `python manage.py migrate <app> <previous>` —
+  but reversing can be lossy (a dropped column's data is gone).
+- **Restore a database dump** that matches the older release (see the backup
+  mailbox and restore sections below).
+
+## 7. Backup mailbox (Gmail)
 
 Nightly Postgres backups produced by `postgres/pg.sh -d` are tar files
 on the developer's Mac (a launchd job runs the dump). To survive a
@@ -248,7 +298,7 @@ Any officer with the mailbox credentials can:
 The mailbox is search-indexed and 15 GB free — at one ~MB dump per
 day that's years of headroom.
 
-## 7. Restore verification (`pg.sh -t`)
+## 8. Restore verification (`pg.sh -t`)
 
 A backup that's never been restored is a backup you can't trust.
 `pg.sh -t` exercises the full restore path against an *ephemeral*
