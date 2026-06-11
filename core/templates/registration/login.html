@@ -3,23 +3,54 @@
 <div class="row justify-content-center">
     <div class="col-md-6 col-lg-5">
         <div class="card mt-4 mt-md-5">
-            <div class="card-header bg-primary text-white">Login</div>
+            <div class="card-header bg-primary text-white">Sign in to SpeakUp</div>
             <div class="card-body">
+
+                {% if form.non_field_errors %}
+                    <div class="alert alert-danger">
+                        {% for error in form.non_field_errors %}{{ error }}{% endfor %}
+                    </div>
+                {% endif %}
+
+                {# Password sign-in #}
                 <form method="post">
                     {% csrf_token %}
                     <div class="mb-3">
-                        <label class="form-label">Username</label>
-                        <input type="text" name="username" placeholder="first.last" class="form-control" required>
+                        <label class="form-label" for="id_username">Email</label>
+                        {{ form.username }}
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">Password</label>
-                        <input type="password" name="password" class="form-control" required>
+                        <label class="form-label" for="id_password">Password</label>
+                        {{ form.password }}
                     </div>
-                    <button type="submit" class="btn btn-primary w-100">Login</button>
+                    {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
+                    <button type="submit" class="btn btn-primary w-100">Sign in</button>
                 </form>
-                <div class="text-center mt-3">
+                <div class="text-center mt-2">
                     <a href="{% url 'password_reset' %}">Forgot your password?</a>
                 </div>
+
+                <div class="d-flex align-items-center my-3 text-muted">
+                    <hr class="flex-grow-1"><span class="px-2 small">or</span><hr class="flex-grow-1">
+                </div>
+
+                {# Passwordless magic-link sign-in #}
+                <form method="post" action="{% url 'magic_link_request' %}">
+                    {% csrf_token %}
+                    <p class="small text-muted mb-2">
+                        Haven't set a password? Enter your email and we'll send you a
+                        one-time sign-in link.
+                    </p>
+                    <div class="mb-3">
+                        <label class="form-label" for="magic_email">Email</label>
+                        <input type="email" name="email" id="magic_email"
+                               class="form-control" autocomplete="email" required>
+                    </div>
+                    <button type="submit" class="btn btn-outline-primary w-100">
+                        Email me a sign-in link
+                    </button>
+                </form>
+
             </div>
         </div>
     </div>

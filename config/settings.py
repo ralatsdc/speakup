@@ -103,6 +103,13 @@ DATABASES = {
 # --- Auth ----------------------------------------------------------------
 AUTH_USER_MODEL = "members.User"
 
+# Members sign in with their email (members.auth.EmailBackend); ModelBackend is
+# kept second so the Django admin's username login still works for superusers.
+AUTHENTICATION_BACKENDS = [
+    "members.auth.EmailBackend",
+    "django.contrib.auth.backends.ModelBackend",
+]
+
 AUTH_PASSWORD_VALIDATORS = [
     {
         "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator",
@@ -120,6 +127,11 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LOGIN_REDIRECT_URL = "role_signups"
 LOGOUT_REDIRECT_URL = "landing"
+
+# Validity window for emailed sign-in (magic) links and email-change
+# confirmation links, in seconds. 24 hours.
+MAGIC_LINK_MAX_AGE = 60 * 60 * 24
+EMAIL_CHANGE_MAX_AGE = 60 * 60 * 24
 
 
 # --- i18n ----------------------------------------------------------------
@@ -185,7 +197,7 @@ else:
         "BREVO_API_KEY": os.getenv("BREVO_API_KEY"),
     }
 
-DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "noreply@speakup.com")
+DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "amy.leclair@thenutcake.net")
 SERVER_EMAIL = DEFAULT_FROM_EMAIL
 
 SITE_URL = os.getenv("SITE_URL", "http://127.0.0.1:8000")

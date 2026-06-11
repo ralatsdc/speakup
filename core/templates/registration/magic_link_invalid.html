@@ -1,0 +1,17 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6 col-lg-5">
+        <div class="card mt-4 mt-md-5">
+            <div class="card-header bg-danger text-white">Link expired</div>
+            <div class="card-body">
+                <p>
+                    This sign-in link is no longer valid — it may have expired (links
+                    last 24 hours) or already been used.
+                </p>
+                <a href="{% url 'login' %}" class="btn btn-primary">Get a new link</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

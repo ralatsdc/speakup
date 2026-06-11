@@ -1,0 +1,26 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6 col-lg-5">
+        <div class="card mt-4 mt-md-5">
+            <div class="card-header bg-primary text-white">Check your email</div>
+            <div class="card-body">
+                <p>
+                    If <strong>{{ email }}</strong> is registered with SpeakUp, we've
+                    just sent a sign-in link to it. The link is valid for 24 hours.
+                </p>
+                <p class="text-muted small">
+                    Didn't get it? Check your spam folder, or
+                    <a href="{% url 'login' %}">try again</a>.
+                </p>
+                <hr>
+                <p class="small mb-0">
+                    <strong>New to Speak Up Cambridge?</strong> Come to a meeting and
+                    check in — a club officer will then set up your account, and you'll
+                    be able to sign in here.
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

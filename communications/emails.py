@@ -114,6 +114,18 @@ def send_messages(messages):
     return get_connection().send_messages(messages) or 0
 
 
+def send_simple(subject, body_md, to_email):
+    """Send a single transactional email (magic-link, welcome, email-change
+    confirmation) authored in Markdown, with a plain-text body and an HTML
+    alternative — the same rendering the bulk workflows use. ``to_email`` may be
+    a string or a list. Returns the number of messages accepted for delivery."""
+    recipients = [to_email] if isinstance(to_email, str) else list(to_email)
+    msg = EmailMultiAlternatives(
+        subject, to_text(body_md), settings.DEFAULT_FROM_EMAIL, recipients)
+    msg.attach_alternative(to_html(body_md), "text/html")
+    return get_connection().send_messages([msg]) or 0
+
+
 def total_recipients(groups):
     return sum(len(g["recipients"]) for g in groups)
 
