@@ -133,6 +133,12 @@ LOGOUT_REDIRECT_URL = "landing"
 MAGIC_LINK_MAX_AGE = 60 * 60 * 24
 EMAIL_CHANGE_MAX_AGE = 60 * 60 * 24
 
+# Map Django's "error" message tag to Bootstrap's "danger" so flash messages
+# render with the right alert colour.
+from django.contrib.messages import constants as message_constants  # noqa: E402
+
+MESSAGE_TAGS = {message_constants.ERROR: "danger"}
+
 
 # --- i18n ----------------------------------------------------------------
 LANGUAGE_CODE = "en-us"

@@ -1,9 +1,11 @@
-"""Member-facing transactional emails (welcome / onboarding)."""
+"""Member-facing transactional emails (welcome / onboarding, email change)."""
 
 from django.conf import settings
 from django.urls import reverse
 
 from communications.emails import send_simple
+
+from .tokens import make_email_change_token
 
 
 def send_welcome_email(user):
@@ -23,3 +25,20 @@ def send_welcome_email(user):
         f"See you at the next meeting!\n"
     )
     return send_simple("Welcome to SpeakUp", body, user.email)
+
+
+def send_email_change_confirmation(user, new_email):
+    """Email a confirmation link to the member's *proposed* new address. The
+    change only applies when they click it, so the link goes to ``new_email``
+    (not the current one). Returns the number of messages accepted."""
+    path = reverse("account_email_confirm", args=[make_email_change_token(user, new_email)])
+    link = f"{settings.SITE_URL}{path}"
+    body = (
+        f"Hi {user.first_name or 'there'},\n\n"
+        f"Use the link below to confirm **{new_email}** as your new sign-in email "
+        f"for SpeakUp. It's valid for 24 hours.\n\n"
+        f"[Confirm this email address]({link})\n\n"
+        f"If you didn't request this, you can ignore this email — your address "
+        f"won't change.\n"
+    )
+    return send_simple("Confirm your new SpeakUp email", body, new_email)

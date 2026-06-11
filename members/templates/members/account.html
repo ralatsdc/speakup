@@ -1,0 +1,84 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8 col-lg-6">
+
+        <h1 class="h3 mt-4 mb-3">Your account</h1>
+
+        {% if messages %}
+            {% for message in messages %}
+                <div class="alert alert-{{ message.tags|default:'info' }}">{{ message }}</div>
+            {% endfor %}
+        {% endif %}
+
+        {# --- Name ---------------------------------------------------------- #}
+        <div class="card mb-4">
+            <div class="card-header bg-primary text-white">Name</div>
+            <div class="card-body">
+                <form method="post" action="{% url 'account_profile' %}">
+                    {% csrf_token %}
+                    <div class="mb-3">
+                        <label class="form-label" for="{{ profile_form.first_name.id_for_label }}">First name</label>
+                        {{ profile_form.first_name }}
+                        {% for e in profile_form.first_name.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label" for="{{ profile_form.last_name.id_for_label }}">Last name</label>
+                        {{ profile_form.last_name }}
+                        {% for e in profile_form.last_name.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}
+                    </div>
+                    <button type="submit" class="btn btn-primary">Save name</button>
+                </form>
+            </div>
+        </div>
+
+        {# --- Password ------------------------------------------------------ #}
+        <div class="card mb-4">
+            <div class="card-header bg-primary text-white">Password</div>
+            <div class="card-body">
+                <p class="text-muted small">
+                    Set a password to sign in with. You're already signed in, so you
+                    won't need your current one. Email sign-in links keep working
+                    whether or not you set a password.
+                </p>
+                <form method="post" action="{% url 'account_password' %}">
+                    {% csrf_token %}
+                    {% for field in password_form %}
+                        <div class="mb-3">
+                            <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                            {{ field }}
+                            {% for e in field.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}
+                            {% if field.help_text %}<div class="form-text">{{ field.help_text|safe }}</div>{% endif %}
+                        </div>
+                    {% endfor %}
+                    <button type="submit" class="btn btn-primary">Save password</button>
+                </form>
+            </div>
+        </div>
+
+        {# --- Email --------------------------------------------------------- #}
+        <div class="card mb-4">
+            <div class="card-header bg-primary text-white">Email</div>
+            <div class="card-body">
+                <p class="mb-3">
+                    You sign in with <strong>{{ user.email }}</strong>.
+                </p>
+                <form method="post" action="{% url 'account_email' %}">
+                    {% csrf_token %}
+                    <div class="mb-3">
+                        <label class="form-label" for="{{ email_form.new_email.id_for_label }}">New email</label>
+                        {{ email_form.new_email }}
+                        {% for e in email_form.new_email.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}
+                        <div class="form-text">
+                            We'll send a confirmation link to the new address; your
+                            email changes only after you click it.
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-outline-primary">Change email</button>
+                </form>
+            </div>
+        </div>
+
+    </div>
+</div>
+{% endblock %}
