@@ -564,3 +564,46 @@ class OfficerUserAdminGuardTest(TestCase):
     def test_csv_import_is_superuser_only(self):
         self.assertFalse(self.admin.has_import_permission(self._req(self.officer)))
         self.assertTrue(self.admin.has_import_permission(self._req(self.superuser)))
+
+
+class MyActivityTest(TestCase):
+    """Member-facing per-role progress page (non-admin)."""
+
+    def setUp(self):
+        self.tm = Role.objects.create(name="Toastmaster")
+        self.timer = Role.objects.create(name="Timer")
+        # President isn't sign-up-able -> never in the breakdown.
+        self.president = Role.objects.create(name="President", show_on_agenda=False)
+
+        self.alice = User.objects.create_user(
+            username="alice", email="alice@example.com", password="pw",
+            first_name="Alice")
+        self.bob = User.objects.create_user(
+            username="bob", email="bob@example.com", password="pw")
+
+        past = Meeting.objects.create(date=timezone.now() - timedelta(days=10))
+        MeetingRole.objects.create(meeting=past, role=self.tm, user=self.alice)
+        # Bob's Timer role must not leak into Alice's view.
+        MeetingRole.objects.create(meeting=past, role=self.timer, user=self.bob)
+
+    def test_requires_login(self):
+        resp = self.client.get(reverse("my_activity"))
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn(reverse("login"), resp["Location"])
+
+    def test_shows_own_role_progress(self):
+        self.client.force_login(self.alice)
+        resp = self.client.get(reverse("my_activity"))
+        self.assertEqual(resp.status_code, 200)
+        breakdown = {r["role"].name: r for r in resp.context["role_breakdown"]}
+        self.assertEqual(breakdown["Toastmaster"]["count"], 1)
+        self.assertIsNotNone(breakdown["Toastmaster"]["last_taken"])
+        self.assertEqual(breakdown["Timer"]["count"], 0)   # Alice never timed
+        self.assertNotIn("President", breakdown)            # off-agenda excluded
+        self.assertEqual(resp.context["total_roles"], 1)
+
+    def test_other_members_roles_excluded(self):
+        self.client.force_login(self.alice)
+        resp = self.client.get(reverse("my_activity"))
+        breakdown = {r["role"].name: r for r in resp.context["role_breakdown"]}
+        self.assertEqual(breakdown["Timer"]["count"], 0)    # Bob's, not Alice's
