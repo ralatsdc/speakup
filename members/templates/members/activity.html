@@ -1,0 +1,48 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+
+        <h1 class="h3 mt-4 mb-2">My activity</h1>
+        <p class="text-muted">
+            <strong>{{ total_meetings }}</strong> meeting{{ total_meetings|pluralize }} attended
+            · <strong>{{ total_roles }}</strong> role{{ total_roles|pluralize }} taken
+        </p>
+
+        <div class="card">
+            <div class="card-header bg-primary text-white">Roles</div>
+            <div class="card-body p-0">
+                <table class="table table-striped align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th scope="col">Role</th>
+                            <th scope="col" class="text-center">Times taken</th>
+                            <th scope="col">Last taken</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in role_breakdown %}
+                            <tr {% if not row.count %}class="text-muted"{% endif %}>
+                                <td>{{ row.role.name }}</td>
+                                <td class="text-center">{{ row.count }}</td>
+                                <td>
+                                    {% if row.last_taken %}
+                                        {{ row.last_taken|date:"M j, Y" }}
+                                    {% else %}
+                                        &mdash;
+                                    {% endif %}
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <p class="text-muted small mt-2 mb-4">
+            Roles with a dash are ones you haven't taken yet — something to try at
+            an upcoming meeting.
+        </p>
+
+    </div>
+</div>
+{% endblock %}

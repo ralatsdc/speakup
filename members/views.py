@@ -1,15 +1,19 @@
-"""Officer-facing member-activity report.
+"""Member-activity reporting.
 
-Renders two custom admin views, wired into ``CustomUserAdmin.get_urls()``:
+Two officer-facing admin views, wired into ``CustomUserAdmin.get_urls()``:
 
 * Summary — every active non-guest member with their meetings-attended count
   and total roles-taken count over an optional date range.
 * Detail — one member's per-meeting history (date, role taken or "attended
   only", attendance mode) plus a per-role count breakdown.
 
-Both views are gated by ``admin_site.admin_view()`` (is_staff). Officers get
-``is_staff`` via the ``members.signals`` post_save handler, so the existing
+Both admin views are gated by ``admin_site.admin_view()`` (is_staff). Officers
+get ``is_staff`` via the ``members.signals`` post_save handler, so the existing
 officer/superuser audience already has access — no extra permission flags.
+
+Plus one member-facing view, ``my_activity`` — a non-admin page showing the
+signed-in member their own per-role progress. It shares the ``_member_activity``
+aggregation with the officer detail view.
 """
 
 from collections import defaultdict
@@ -18,6 +22,7 @@ from urllib.parse import urlencode
 
 from django.contrib import admin
 from django.contrib.admin.views.decorators import staff_member_required
+from django.contrib.auth.decorators import login_required
 from django.db.models import Count, Max, Q
 from django.shortcuts import get_object_or_404, render
 from django.utils import timezone
@@ -156,14 +161,10 @@ def _querystring(start, end, **extra):
     return urlencode(params)
 
 
-@staff_member_required
-def activity_report_detail(request, user_id):
-    member = get_object_or_404(User, pk=user_id)
-
-    start = _parse_date(request.GET.get("start"))
-    end = _parse_date(request.GET.get("end"))
-    start_dt, end_dt = _aware_range_bounds(start, end)
-
+def _member_activity(member, start_dt=None, end_dt=None):
+    """Aggregate one member's attendance + roles into a per-meeting history and
+    a per-role breakdown. Shared by the officer-facing admin detail page and the
+    member's own self-service activity page."""
     attendance_qs = Attendance.objects.filter(user=member).select_related("meeting")
     role_qs = (
         MeetingRole.objects.filter(user=member)
@@ -193,7 +194,8 @@ def activity_report_detail(request, user_id):
 
     # Per-role breakdown across EVERY sign-up-able role (not just ones taken),
     # with how many times and when last taken — so officers can spot gaps and
-    # invite. Roles never taken show count 0 / last "—".
+    # invite, and members can see which roles they haven't tried yet. Roles
+    # never taken show count 0 / last "—".
     taken = {
         row["role"]: row
         for row in role_qs.values("role").annotate(
@@ -212,17 +214,41 @@ def activity_report_detail(request, user_id):
     # Invites are pointless with no upcoming meeting to sign up for.
     upcoming_exists = Meeting.objects.filter(date__gte=timezone.now()).exists()
 
-    context = {
-        **admin.site.each_context(request),
-        "title": f"Activity: {member}",
-        "member": member,
+    return {
         "meeting_rows": meeting_rows,
         "role_breakdown": role_breakdown,
         "upcoming_exists": upcoming_exists,
         "total_meetings": sum(1 for r in meeting_rows if r["attended"]),
         "total_roles": role_qs.count(),
+    }
+
+
+@staff_member_required
+def activity_report_detail(request, user_id):
+    member = get_object_or_404(User, pk=user_id)
+
+    start = _parse_date(request.GET.get("start"))
+    end = _parse_date(request.GET.get("end"))
+    start_dt, end_dt = _aware_range_bounds(start, end)
+
+    context = {
+        **admin.site.each_context(request),
+        "title": f"Activity: {member}",
+        "member": member,
+        **_member_activity(member, start_dt, end_dt),
         "start": start.isoformat() if start else "",
         "end": end.isoformat() if end else "",
         "querystring": _querystring(start, end),
     }
     return render(request, "members/admin/activity_report_detail.html", context)
+
+
+@login_required
+def my_activity(request):
+    """The signed-in member's own activity — a non-admin view of their per-role
+    progress. All-time; reuses the officer report's aggregation."""
+    return render(
+        request,
+        "members/activity.html",
+        {"member": request.user, **_member_activity(request.user)},
+    )
