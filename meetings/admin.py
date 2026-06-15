@@ -2,7 +2,8 @@ from django import forms
 from django.conf import settings
 from django.contrib import admin, messages
 from django.db import models
-from django.db.models import OuterRef, Subquery
+from django.db.models import Case, IntegerField, OuterRef, Subquery, Value, When
+from django.db.models.functions import Coalesce
 from django.http import HttpResponseRedirect
 from django.urls import path, reverse
 from urllib.parse import urlencode
@@ -376,12 +377,83 @@ class MeetingRoleAdmin(admin.ModelAdmin):
     raw_id_fields = ("evaluates",)
 
 
+class MeetingListFilter(admin.RelatedFieldListFilter):
+    """List only meetings that have attendance records, newest-first. The
+    stock filter lists every meeting in insertion order — including future
+    meetings that exist only because their roles were pre-populated — none of
+    which can match an attendance row."""
+
+    def field_choices(self, field, request, model_admin):
+        meetings = (
+            Meeting.objects.filter(attendances__isnull=False)
+            .distinct()
+            .order_by("-date")
+        )
+        return [(m.pk, str(m)) for m in meetings]
+
+
+class AttendeeTypeListFilter(admin.SimpleListFilter):
+    """Filter attendance by how the attendee is recorded: a club member, a
+    guest who has a (guest) User account, or an un-linked walk-in guest."""
+
+    title = "attendee type"
+    parameter_name = "attendee_type"
+
+    def lookups(self, request, model_admin):
+        return [
+            ("member", "Member"),
+            ("guest_user", "Guest User"),
+            ("walk_in", "Walk-in"),
+        ]
+
+    def queryset(self, request, queryset):
+        value = self.value()
+        if value == "member":
+            return queryset.filter(user__isnull=False, user__is_guest=False)
+        if value == "guest_user":
+            return queryset.filter(user__isnull=False, user__is_guest=True)
+        if value == "walk_in":
+            return queryset.filter(user__isnull=True)
+        return queryset
+
+
 @admin.register(Attendance)
 class AttendanceAdmin(admin.ModelAdmin):
-    list_display = ("meeting", "who_attended", "guest_email", "timestamp")
-    list_filter = ("meeting", ("user", admin.EmptyFieldListFilter))
-    search_fields = ("guest_first_name", "guest_last_name", "guest_email")
+    list_display = (
+        "meeting",
+        "who_attended",
+        "attendee_type",
+        "guest_email",
+        "thanked",
+        "timestamp",
+    )
+    list_filter = (("meeting", MeetingListFilter), AttendeeTypeListFilter)
+    list_select_related = ("meeting", "user")
+    search_fields = (
+        "guest_first_name",
+        "guest_last_name",
+        "guest_email",
+        "user__first_name",
+        "user__last_name",
+        "user__email",
+    )
+    date_hierarchy = "meeting__date"
+    ordering = ("-meeting__date",)
     actions = ["convert_guest_to_user"]
+
+    def get_queryset(self, request):
+        # Annotations that let the computed columns sort: a unified surname
+        # (member's or walk-in's) and a numeric attendee-type rank.
+        qs = super().get_queryset(request)
+        return qs.annotate(
+            _attendee_name=Coalesce("user__last_name", "guest_last_name"),
+            _attendee_type=Case(
+                When(user__isnull=True, then=Value(2)),  # Walk-in
+                When(user__is_guest=True, then=Value(1)),  # Guest User
+                default=Value(0),  # Member
+                output_field=IntegerField(),
+            ),
+        )
 
     @admin.action(description="Convert selected guests to Users")
     def convert_guest_to_user(self, request, queryset):
@@ -404,7 +476,22 @@ class AttendanceAdmin(admin.ModelAdmin):
             messages.SUCCESS,
         )
 
+    @admin.display(description="Who attended", ordering="_attendee_name")
     def who_attended(self, obj):
         if obj.user:
-            return f"{obj.user.first_name} {obj.user.last_name} ({'Member' if not obj.user.is_guest else 'Guest User'})"
-        return f"{obj.guest_first_name} {obj.guest_last_name} (Walk-in)"
+            name = f"{obj.user.first_name} {obj.user.last_name}".strip()
+            return name or obj.user.email
+        return f"{obj.guest_first_name} {obj.guest_last_name}".strip()
+
+    @admin.display(description="Type", ordering="_attendee_type")
+    def attendee_type(self, obj):
+        if obj.user:
+            return "Guest User" if obj.user.is_guest else "Member"
+        return "Walk-in"
+
+    @admin.display(description="Thanked?", boolean=True, ordering="thank_you_sent_at")
+    def thanked(self, obj):
+        # Thank-you emails go to guests only; show a neutral icon for members.
+        if obj.user and not obj.user.is_guest:
+            return None
+        return obj.thank_you_sent_at is not None
