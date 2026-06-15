@@ -1,6 +1,7 @@
 import tempfile
 from unittest.mock import patch
 
+from django.contrib import admin
 from django.core import mail
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, Client, override_settings
@@ -8,6 +9,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from members.models import User
+from .admin import AttendanceAdmin
 from .models import (
     Attendance,
     Meeting,
@@ -1446,3 +1448,123 @@ class RoleDurationLabelTest(TestCase):
     def test_exact_override_wins(self):
         self.assertEqual(
             self._role_assignment(5, 7, exact=10).duration_label(), "10 min")
+
+
+class AttendanceAdminTest(TestCase):
+    """The Attendance admin changelist: search across members, the
+    attendee-type filter, and the computed display columns."""
+
+    def setUp(self):
+        self.admin = User.objects.create_superuser(
+            username="boss", email="boss@example.com", password="pass",
+        )
+        self.client.login(username="boss", email="boss@example.com", password="pass")
+        self.meeting = Meeting.objects.create(date=timezone.now(), theme="Leadership")
+
+        self.member = User.objects.create_user(
+            username="alice", email="alice@example.com", password="pass",
+            first_name="Alice", last_name="Speaker",
+        )
+        self.guest_user = User.objects.create_user(
+            username="gabe", email="gabe@example.com", password="pass",
+            first_name="Gabe", last_name="Guestuser", is_guest=True,
+        )
+        self.member_att = Attendance.objects.create(
+            meeting=self.meeting, user=self.member)
+        self.guest_user_att = Attendance.objects.create(
+            meeting=self.meeting, user=self.guest_user)
+        self.walkin_att = Attendance.objects.create(
+            meeting=self.meeting, guest_first_name="Wendy",
+            guest_last_name="Walkin", guest_email="wendy@example.com",
+        )
+        self.url = reverse("admin:meetings_attendance_changelist")
+
+    def test_changelist_renders(self):
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, 200)
+        # The new Type column shows each attendee category.
+        self.assertContains(response, "Member")
+        self.assertContains(response, "Guest User")
+        self.assertContains(response, "Walk-in")
+
+    def test_search_finds_member_by_name(self):
+        # Previously only guest fields were searchable; members are now too.
+        response = self.client.get(self.url, {"q": "Speaker"})
+        results = response.context["cl"].queryset
+        self.assertIn(self.member_att, results)
+        self.assertNotIn(self.walkin_att, results)
+
+    def test_search_finds_walkin_guest(self):
+        response = self.client.get(self.url, {"q": "Wendy"})
+        results = response.context["cl"].queryset
+        self.assertIn(self.walkin_att, results)
+        self.assertNotIn(self.member_att, results)
+
+    def test_attendee_type_filter(self):
+        member_only = self.client.get(self.url, {"attendee_type": "member"})
+        self.assertEqual(
+            list(member_only.context["cl"].queryset), [self.member_att])
+
+        walkins = self.client.get(self.url, {"attendee_type": "walk_in"})
+        self.assertEqual(
+            list(walkins.context["cl"].queryset), [self.walkin_att])
+
+        guest_users = self.client.get(self.url, {"attendee_type": "guest_user"})
+        self.assertEqual(
+            list(guest_users.context["cl"].queryset), [self.guest_user_att])
+
+    def test_meeting_filter_lists_only_attended_meetings_newest_first(self):
+        # A past meeting that was attended -> appears, after self.meeting.
+        attended_past = Meeting.objects.create(
+            date=timezone.now() - timezone.timedelta(days=14), theme="Past")
+        Attendance.objects.create(
+            meeting=attended_past, guest_first_name="Pat", guest_last_name="Past")
+        # A future scheduled meeting and a past meeting nobody attended -> both
+        # hidden, since neither has any attendance rows.
+        future = Meeting.objects.create(
+            date=timezone.now() + timezone.timedelta(days=14), theme="Future")
+        empty_past = Meeting.objects.create(
+            date=timezone.now() - timezone.timedelta(days=7), theme="Empty")
+
+        response = self.client.get(self.url)
+        # The meeting filter is the first registered list filter.
+        meeting_filter = response.context["cl"].filter_specs[0]
+        listed = [
+            choice["display"]
+            for choice in meeting_filter.choices(response.context["cl"])
+            if choice["display"] != "All"
+        ]
+        # Newest-first among meetings that have attendance.
+        self.assertEqual(listed, [str(self.meeting), str(attended_past)])
+        self.assertNotIn(str(future), listed)
+        self.assertNotIn(str(empty_past), listed)
+
+    def test_computed_columns_are_sortable(self):
+        admin_instance = AttendanceAdmin(Attendance, admin.site)
+        # Each computed column declares an ordering field, so clicking its
+        # header sorts instead of erroring.
+        self.assertEqual(
+            admin_instance.who_attended.admin_order_field, "_attendee_name")
+        self.assertEqual(
+            admin_instance.attendee_type.admin_order_field, "_attendee_type")
+        self.assertEqual(
+            admin_instance.thanked.admin_order_field, "thank_you_sent_at")
+
+    def test_sorting_by_attendee_type_orders_member_guest_walkin(self):
+        # The admin "o" sort param is 1-based over list_display; attendee_type
+        # is the 3rd column (meeting, who_attended, attendee_type). Sort asc.
+        response = self.client.get(self.url, {"o": "3"})
+        self.assertEqual(response.status_code, 200)
+        ordered = list(response.context["cl"].queryset)
+        # Member (0) < Guest User (1) < Walk-in (2)
+        self.assertEqual(
+            ordered, [self.member_att, self.guest_user_att, self.walkin_att])
+
+    def test_thanked_column_neutral_for_members(self):
+        admin_instance = AttendanceAdmin(Attendance, admin.site)
+        # Members are never sent guest thank-yous → neutral (None) icon.
+        self.assertIsNone(admin_instance.thanked(self.member_att))
+        # Walk-in guest not yet thanked → False.
+        self.assertFalse(admin_instance.thanked(self.walkin_att))
+        self.walkin_att.thank_you_sent_at = timezone.now()
+        self.assertTrue(admin_instance.thanked(self.walkin_att))
