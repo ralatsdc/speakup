@@ -1,13 +1,14 @@
 import re
 import time
 from datetime import timedelta
+from urllib.parse import quote
 
 import requests
 from django.conf import settings
 from django.utils import timezone as tz
 
 from members.models import User
-from .models import Attendance, Meeting
+from .models import Attendance
 
 # Module-level token cache
 _token_cache = {"token": None, "expires_at": 0}
@@ -41,8 +42,21 @@ def get_zoom_access_token():
     return _token_cache["token"]
 
 
+def _parse_zoom_datetime(dt_string):
+    """Parse a Zoom API datetime string (ISO 8601) into an aware datetime."""
+    from django.utils.dateparse import parse_datetime
+
+    dt = parse_datetime(dt_string or "")
+    if dt and tz.is_naive(dt):
+        dt = tz.make_aware(dt, tz.utc)
+    return dt
+
+
 def fetch_zoom_registrants(meeting_id):
-    """Fetch all approved registrants for a Zoom meeting, handling pagination."""
+    """Fetch all approved registrants for a Zoom meeting, handling pagination.
+
+    Used to answer "has this person already registered?" when nudging remote
+    role-takers — not for attendance (see ``import_zoom_participants``)."""
     token = get_zoom_access_token()
     registrants = []
     next_page_token = ""
@@ -70,39 +84,115 @@ def fetch_zoom_registrants(meeting_id):
     return registrants
 
 
-def _registration_window(meeting):
-    """Return (start, end) datetimes for filtering registrants by create_time.
+# --- participant-attendance import -----------------------------------------
 
-    Uses the previous meeting's date as the lower bound (so registrations after
-    that meeting count toward this one). Falls back to 30 days before if there
-    is no previous meeting. The upper bound is the meeting date + 1 day.
-    """
-    previous = (
-        Meeting.objects.filter(date__lt=meeting.date)
-        .order_by("-date")
-        .values_list("date", flat=True)
-        .first()
+
+def fetch_past_meeting_instances(meeting_id):
+    """Return the list of past occurrences ``[{uuid, start_time}, ...]`` for a
+    (recurring) meeting ID."""
+    token = get_zoom_access_token()
+    response = requests.get(
+        f"https://api.zoom.us/v2/past_meetings/{meeting_id}/instances",
+        headers={"Authorization": f"Bearer {token}"},
+        timeout=10,
     )
-    start = previous if previous else meeting.date - timedelta(days=30)
-    end = meeting.date + timedelta(days=1)
-    return start, end
+    response.raise_for_status()
+    return response.json().get("meetings", [])
 
 
-def _parse_zoom_datetime(dt_string):
-    """Parse a Zoom API datetime string (ISO 8601) into an aware datetime."""
-    from django.utils.dateparse import parse_datetime
+def select_occurrence_uuid(instances, meeting_date):
+    """Pick the past occurrence whose start_time is closest to ``meeting_date``,
+    within a one-day window. Returns its UUID, or None if there's no match."""
+    best_uuid = None
+    best_delta = None
+    for inst in instances:
+        start = _parse_zoom_datetime(inst.get("start_time"))
+        uuid = inst.get("uuid")
+        if not start or not uuid:
+            continue
+        delta = abs(start - meeting_date)
+        if delta <= timedelta(days=1) and (best_delta is None or delta < best_delta):
+            best_uuid, best_delta = uuid, delta
+    return best_uuid
 
-    dt = parse_datetime(dt_string)
-    if dt and tz.is_naive(dt):
-        dt = tz.make_aware(dt, tz.utc)
-    return dt
+
+def _encode_uuid(uuid):
+    """Zoom requires double URL-encoding of meeting UUIDs containing '/'."""
+    if "/" in uuid:
+        return quote(quote(uuid, safe=""), safe="")
+    return uuid
 
 
-def import_zoom_registrants(meeting):
-    """Import Zoom registrants as Attendance records for a meeting.
+def _normalize_participant(p):
+    return {
+        "name": (p.get("name") or "").strip(),
+        "email": (p.get("user_email") or "").strip(),
+        "join_time": p.get("join_time", ""),
+    }
 
-    Only includes registrants whose create_time falls between the previous
-    meeting date and the day after this meeting.
+
+def _paginate_participants(url, token):
+    participants = []
+    next_page_token = ""
+    while True:
+        params = {"page_size": 300}
+        if next_page_token:
+            params["next_page_token"] = next_page_token
+        response = requests.get(
+            url,
+            headers={"Authorization": f"Bearer {token}"},
+            params=params,
+            timeout=10,
+        )
+        response.raise_for_status()
+        data = response.json()
+        participants.extend(data.get("participants", []))
+        next_page_token = data.get("next_page_token", "")
+        if not next_page_token:
+            break
+    return [_normalize_participant(p) for p in participants]
+
+
+def fetch_zoom_participants(meeting_uuid):
+    """Fetch participants for one past meeting occurrence, handling pagination.
+
+    Tries the report endpoint first (most reliable emails); on an HTTP 4xx
+    (e.g. the plan/scope isn't available) falls back to the past_meetings
+    endpoint. Returns normalized ``{name, email, join_time}`` dicts."""
+    token = get_zoom_access_token()
+    encoded = _encode_uuid(meeting_uuid)
+    endpoints = (
+        f"https://api.zoom.us/v2/report/meetings/{encoded}/participants",
+        f"https://api.zoom.us/v2/past_meetings/{encoded}/participants",
+    )
+    for i, url in enumerate(endpoints):
+        try:
+            return _paginate_participants(url, token)
+        except requests.HTTPError as exc:
+            status = exc.response.status_code if exc.response is not None else None
+            is_last = i == len(endpoints) - 1
+            if status is not None and 400 <= status < 500 and not is_last:
+                continue  # try the fallback endpoint
+            raise
+    return []
+
+
+def _split_name(name):
+    """Split a Zoom display name into (first, last)."""
+    parts = name.split()
+    if not parts:
+        return "", ""
+    if len(parts) == 1:
+        return parts[0], ""
+    return parts[0], " ".join(parts[1:])
+
+
+def import_zoom_participants(meeting):
+    """Import the participants who actually joined the meeting's Zoom call as
+    Attendance records.
+
+    Matches each participant to an active member by email, then by a unique
+    display-name match; unmatched joiners become guest Attendance rows.
 
     Returns (members_count, guests_count, skipped_count).
     """
@@ -110,44 +200,62 @@ def import_zoom_registrants(meeting):
     if not meeting_id:
         raise ValueError("Could not extract Zoom meeting ID from the zoom_link.")
 
-    registrants = fetch_zoom_registrants(meeting_id)
+    instances = fetch_past_meeting_instances(meeting_id)
+    occurrence_uuid = select_occurrence_uuid(instances, meeting.date)
+    if not occurrence_uuid:
+        raise ValueError("No Zoom occurrence found for this meeting's date.")
 
-    # Filter registrants to those who registered in the window for this meeting
-    window_start, window_end = _registration_window(meeting)
-    filtered = []
-    for reg in registrants:
-        create_time = reg.get("create_time")
-        if not create_time:
+    participants = fetch_zoom_participants(occurrence_uuid)
+
+    # Dedup rejoins: collapse by lowercased email, else by normalized name.
+    unique = {}
+    for p in participants:
+        key = p["email"].lower() if p["email"] else f"name:{p['name'].lower()}"
+        if key == "name:":
+            continue  # no email and no name — nothing to record
+        unique.setdefault(key, p)
+    participants = list(unique.values())
+
+    # Member lookup tables over active users.
+    active = list(User.objects.filter(is_active=True))
+    users_by_email = {u.email.lower(): u for u in active if u.email}
+    name_to_user = {}
+    name_counts = {}
+    for u in active:
+        nk = (u.first_name.strip().lower(), u.last_name.strip().lower())
+        if not nk[0] and not nk[1]:
             continue
-        dt = _parse_zoom_datetime(create_time)
-        if dt and window_start <= dt <= window_end:
-            filtered.append(reg)
-    registrants = filtered
+        name_counts[nk] = name_counts.get(nk, 0) + 1
+        name_to_user[nk] = u
+    # Only keep names that map to exactly one member (avoid false matches).
+    users_by_name = {k: v for k, v in name_to_user.items() if name_counts[k] == 1}
 
-    # Build a lookup of existing member emails
-    users_by_email = {u.email.lower(): u for u in User.objects.filter(is_active=True) if u.email}
-
-    # Build a set of existing attendance for this meeting
+    # Existing attendance for this meeting, for dedup.
     existing_user_ids = set(
         meeting.attendances.filter(user__isnull=False).values_list("user_id", flat=True)
     )
-    existing_guest_emails = set(
-        meeting.attendances.filter(user__isnull=True)
+    existing_guest_emails = {
+        e.lower()
+        for e in meeting.attendances.filter(user__isnull=True)
         .exclude(guest_email="")
         .values_list("guest_email", flat=True)
-    )
+    }
+    existing_guest_names = {
+        (fn.strip().lower(), ln.strip().lower())
+        for fn, ln in meeting.attendances.filter(user__isnull=True).values_list(
+            "guest_first_name", "guest_last_name"
+        )
+    }
 
-    members_count = 0
-    guests_count = 0
-    skipped_count = 0
+    members_count = guests_count = skipped_count = 0
 
-    for reg in registrants:
-        email = reg.get("email", "").lower().strip()
-        if not email:
-            skipped_count += 1
-            continue
+    for p in participants:
+        email = p["email"].lower()
+        first, last = _split_name(p["name"])
 
-        user = users_by_email.get(email)
+        user = users_by_email.get(email) if email else None
+        if user is None and (first or last):
+            user = users_by_name.get((first.lower(), last.lower()))
 
         if user:
             if user.id in existing_user_ids:
@@ -157,16 +265,22 @@ def import_zoom_registrants(meeting):
             existing_user_ids.add(user.id)
             members_count += 1
         else:
-            if email in existing_guest_emails:
+            name_key = (first.lower(), last.lower())
+            already = (email and email in existing_guest_emails) or (
+                not email and name_key in existing_guest_names
+            )
+            if already:
                 skipped_count += 1
                 continue
             Attendance.objects.create(
                 meeting=meeting,
-                guest_first_name=reg.get("first_name", ""),
-                guest_last_name=reg.get("last_name", ""),
-                guest_email=email,
+                guest_first_name=first,
+                guest_last_name=last,
+                guest_email=p["email"],
             )
-            existing_guest_emails.add(email)
+            if email:
+                existing_guest_emails.add(email)
+            existing_guest_names.add(name_key)
             guests_count += 1
 
     return members_count, guests_count, skipped_count

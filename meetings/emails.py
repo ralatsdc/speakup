@@ -172,6 +172,67 @@ def build_feedback_draft(meeting, back_url=""):
             "back_url": back_url, "target": {"meeting": meeting.id}, "groups": groups}
 
 
+# --- register-reminder templates -------------------------------------------
+
+REGISTER_SUBJECT = "Please register for the Zoom meeting on {date}"
+REGISTER_BODY = (
+    "Hi {first_name},\n\n"
+    "You're signed up to attend the meeting on {long_date} **remotely**. "
+    "To join online you need to register with Zoom first.\n\n"
+    "Register here: {zoom_url}\n\n"
+    "Once registered, Zoom will email you your personal join link.\n"
+    "See the agenda here: {agenda_url}\n\n"
+    "SpeakUp Team"
+)
+
+
+def build_register_draft(meeting, back_url=""):
+    """Nudge remote role-takers who have NOT yet registered on Zoom. The set of
+    already-registered emails comes from the live Zoom registrant list, so this
+    builder reaches the Zoom API; failures propagate to the review view, which
+    surfaces them rather than emailing everyone."""
+    from .zoom import extract_zoom_meeting_id, fetch_zoom_registrants
+
+    domain = settings.SITE_URL
+    agenda_url = f"{domain}{reverse('meeting_agenda', args=[meeting.id])}"
+    long_date = meeting.date.strftime("%A, %B %d")
+
+    registered = set()
+    meeting_id = extract_zoom_meeting_id(meeting.zoom_link or "")
+    if meeting_id:
+        registered = {
+            (r.get("email") or "").lower() for r in fetch_zoom_registrants(meeting_id)
+        }
+
+    seen = set()
+    recipients = []
+    for a in meeting.roles.filter(in_person=False, user__isnull=False).select_related("user"):
+        user = a.user
+        if not user.email or user.id in seen or user.email.lower() in registered:
+            continue
+        seen.add(user.id)
+        recipients.append({"email": user.email, "name": str(user), "context": {
+            "first_name": user.first_name, "date": meeting.date.date(),
+            "long_date": long_date, "zoom_url": meeting.zoom_link,
+            "agenda_url": agenda_url,
+        }})
+
+    groups = []
+    if recipients:
+        groups.append({
+            "key": "register",
+            "label": f"Remote, not yet registered ({len(recipients)})",
+            "subject": REGISTER_SUBJECT, "body": REGISTER_BODY,
+            "placeholders": ["first_name", "date", "long_date", "zoom_url",
+                             "agenda_url"],
+            "recipients": recipients,
+        })
+
+    return {"workflow": "register",
+            "title": f"Remote-registration nudge — {meeting.date.date()}",
+            "back_url": back_url, "target": {"meeting": meeting.id}, "groups": groups}
+
+
 def role_phrase(roles):
     """Human phrasing for a list of roles: "Toastmaster", "Toastmaster or
     Timer", "Toastmaster, Timer, or Grammarian"."""

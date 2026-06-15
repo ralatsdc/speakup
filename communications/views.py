@@ -48,6 +48,21 @@ def _resolve_handler(workflow, request):
         return {"params": params, "default_back": back,
                 "build": lambda: build_feedback_draft(meeting), "send": send}
 
+    if workflow == "register":
+        from meetings.models import Meeting
+        from meetings.emails import build_register_draft
+        from meetings.utils import send_meeting_register_reminders
+
+        meeting = get_object_or_404(Meeting, pk=p.get("meeting"))
+
+        def send(edits):
+            n = send_meeting_register_reminders(meeting, edits)
+            return f"Sent {n} registration reminder{'s' if n != 1 else ''}."
+        return {"params": {"workflow": workflow, "meeting": meeting.id},
+                "default_back": reverse("admin:meetings_meeting_change",
+                                        args=[meeting.id]),
+                "build": lambda: build_register_draft(meeting), "send": send}
+
     if workflow == "announcement":
         from django.utils import timezone
         from .models import Announcement
@@ -139,11 +154,22 @@ def email_review(request):
     if request.method == "POST":
         if "_cancel" in request.POST:
             return redirect(back_url)
-        edits = _parse_edits(request.POST, handler["build"]()["groups"])
-        messages.success(request, handler["send"](edits))
+        try:
+            edits = _parse_edits(request.POST, handler["build"]()["groups"])
+            result = handler["send"](edits)
+        except Exception as e:
+            # e.g. the Zoom API is unreachable while building the register
+            # draft — surface the error instead of 500-ing or sending blindly.
+            messages.error(request, f"Could not send the email: {e}")
+            return redirect(back_url)
+        messages.success(request, result)
         return redirect(back_url)
 
-    draft = handler["build"]()
+    try:
+        draft = handler["build"]()
+    except Exception as e:
+        messages.error(request, f"Could not build the email: {e}")
+        return redirect(back_url)
     _attach_previews(draft["groups"])
     return render(request, "communications/admin/email_review.html", {
         **admin.site.each_context(request),

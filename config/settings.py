@@ -212,11 +212,11 @@ ZOOM_ACCOUNT_ID = os.getenv("ZOOM_ACCOUNT_ID", "")
 ZOOM_CLIENT_ID = os.getenv("ZOOM_CLIENT_ID", "")
 ZOOM_CLIENT_SECRET = os.getenv("ZOOM_CLIENT_SECRET", "")
 
-# Zoom registrant import is currently disabled — the club's registration flow
-# doesn't use it. Flip to true (env var "true") to re-enable the admin button
-# and the import action without touching the code in meetings/zoom.py.
-ZOOM_REGISTRATION_ENABLED = (
-    os.getenv("ZOOM_REGISTRATION_ENABLED", "false").lower() == "true"
+# Zoom integration (participant-attendance import + "please register" nudges)
+# is disabled by default. Flip to true (env var "true"), and set the three
+# ZOOM_* credentials above, to expose the admin buttons and reach the Zoom API.
+ZOOM_INTEGRATION_ENABLED = (
+    os.getenv("ZOOM_INTEGRATION_ENABLED", "false").lower() == "true"
 )
 
 LOGGING = {
