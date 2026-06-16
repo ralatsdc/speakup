@@ -23,6 +23,7 @@ from .services import convert_guest_attendance_to_user
 from .zoom import (
     extract_zoom_meeting_id,
     import_zoom_participants,
+    resolve_meeting_id,
     select_occurrence_uuid,
 )
 
@@ -717,6 +718,40 @@ class ZoomParticipantsImportTest(TestCase):
         insts = [{"uuid": "far", "start_time": self._iso(
             self.meeting_date - timezone.timedelta(days=10))}]
         self.assertIsNone(select_occurrence_uuid(insts, self.meeting_date))
+
+    def test_resolve_meeting_id_prefers_meeting_type_field(self):
+        # Real-world case: zoom_link is a registration URL with no numeric ID;
+        # the meeting type supplies the ID (spaces tolerated).
+        mt = MeetingType.objects.create(name="Regular", zoom_meeting_id="812 3456 7890")
+        m = Meeting.objects.create(
+            date=timezone.now(), meeting_type=mt,
+            zoom_link="https://us02web.zoom.us/meeting/register/tZcuOpaque")
+        self.assertEqual(resolve_meeting_id(m), "81234567890")
+
+    def test_resolve_meeting_id_falls_back_to_join_link(self):
+        # No meeting type / no configured ID → parse a /j/ link if present.
+        self.assertEqual(resolve_meeting_id(self.meeting), "1234567890")
+
+    def test_resolve_meeting_id_none_when_unavailable(self):
+        m = Meeting.objects.create(
+            date=timezone.now(),
+            zoom_link="https://us02web.zoom.us/meeting/register/tZcuOpaque")
+        self.assertIsNone(resolve_meeting_id(m))
+
+    @patch("meetings.zoom.fetch_zoom_participants")
+    @patch("meetings.zoom.fetch_past_meeting_instances")
+    def test_import_uses_meeting_type_id_with_registration_url(
+            self, mock_instances, mock_participants):
+        mt = MeetingType.objects.create(name="Regular", zoom_meeting_id="81234567890")
+        m = Meeting.objects.create(
+            date=self.meeting_date, meeting_type=mt,
+            zoom_link="https://us02web.zoom.us/meeting/register/tZcuOpaque")
+        mock_instances.return_value = [
+            {"uuid": "abc==", "start_time": self._iso(self.meeting_date)}]
+        mock_participants.return_value = [self._p("Alice Smith", "alice@example.com")]
+        members, guests, skipped = import_zoom_participants(m)
+        self.assertEqual((members, guests, skipped), (1, 0, 0))
+        mock_instances.assert_called_once_with("81234567890")
 
 
 class ZoomIntegrationFlagTest(TestCase):

@@ -191,14 +191,14 @@ def build_register_draft(meeting, back_url=""):
     already-registered emails comes from the live Zoom registrant list, so this
     builder reaches the Zoom API; failures propagate to the review view, which
     surfaces them rather than emailing everyone."""
-    from .zoom import extract_zoom_meeting_id, fetch_zoom_registrants
+    from .zoom import resolve_meeting_id, fetch_zoom_registrants
 
     domain = settings.SITE_URL
     agenda_url = f"{domain}{reverse('meeting_agenda', args=[meeting.id])}"
     long_date = meeting.date.strftime("%A, %B %d")
 
     registered = set()
-    meeting_id = extract_zoom_meeting_id(meeting.zoom_link or "")
+    meeting_id = resolve_meeting_id(meeting)
     if meeting_id:
         registered = {
             (r.get("email") or "").lower() for r in fetch_zoom_registrants(meeting_id)

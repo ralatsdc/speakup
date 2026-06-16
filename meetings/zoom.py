@@ -15,11 +15,23 @@ _token_cache = {"token": None, "expires_at": 0}
 
 
 def extract_zoom_meeting_id(url):
-    """Extract the numeric meeting ID from a Zoom URL."""
+    """Extract the numeric meeting ID from a Zoom join URL (.../j/<id>)."""
     match = re.search(r"/j/(\d+)", url)
     if match:
         return match.group(1)
     return None
+
+
+def resolve_meeting_id(meeting):
+    """The numeric Zoom meeting ID to use for API calls. Prefers the meeting
+    type's ``zoom_meeting_id`` — the stored zoom_link is a registration URL
+    with no numeric ID — falling back to a /j/ join link if one happens to be
+    set on the meeting. Returns None if neither is available."""
+    meeting_type = meeting.meeting_type
+    configured = (getattr(meeting_type, "zoom_meeting_id", "") or "").replace(" ", "")
+    if configured:
+        return configured
+    return extract_zoom_meeting_id(meeting.zoom_link or "")
 
 
 def get_zoom_access_token():
@@ -196,9 +208,11 @@ def import_zoom_participants(meeting):
 
     Returns (members_count, guests_count, skipped_count).
     """
-    meeting_id = extract_zoom_meeting_id(meeting.zoom_link)
+    meeting_id = resolve_meeting_id(meeting)
     if not meeting_id:
-        raise ValueError("Could not extract Zoom meeting ID from the zoom_link.")
+        raise ValueError(
+            "No Zoom meeting ID — set the meeting type's Zoom meeting ID."
+        )
 
     instances = fetch_past_meeting_instances(meeting_id)
     occurrence_uuid = select_occurrence_uuid(instances, meeting.date)

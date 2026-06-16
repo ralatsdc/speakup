@@ -70,7 +70,18 @@ class MeetingType(models.Model):
     """A reusable template that defines which roles a meeting needs (e.g. "Regular Meeting")."""
 
     name = models.CharField(max_length=100)
-    zoom_link = models.URLField(blank=True)
+    zoom_link = models.URLField(
+        blank=True,
+        help_text="Public Zoom registration URL (members register here, then "
+        "Zoom emails them a personal join link). Shown on the agenda and in "
+        "the 'register' reminder.",
+    )
+    zoom_meeting_id = models.CharField(
+        max_length=20,
+        blank=True,
+        help_text="Numeric Zoom meeting ID (e.g. 81234567890) used for the "
+        "attendance/registrant API. Not derivable from the registration URL.",
+    )
 
     def __str__(self):
         return self.name
