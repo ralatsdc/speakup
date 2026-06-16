@@ -732,6 +732,17 @@ class ZoomParticipantsImportTest(TestCase):
         # No meeting type / no configured ID → parse a /j/ link if present.
         self.assertEqual(resolve_meeting_id(self.meeting), "1234567890")
 
+    def test_raise_for_zoom_surfaces_api_message(self):
+        import requests
+        from unittest.mock import Mock
+        from .zoom import _raise_for_zoom
+        resp = Mock()
+        resp.raise_for_status.side_effect = requests.HTTPError("400 Client Error")
+        resp.json.return_value = {"code": 300, "message": "Invalid meeting ID"}
+        with self.assertRaises(requests.HTTPError) as cm:
+            _raise_for_zoom(resp)
+        self.assertIn("Invalid meeting ID", str(cm.exception))
+
     def test_resolve_meeting_id_none_when_unavailable(self):
         m = Meeting.objects.create(
             date=timezone.now(),

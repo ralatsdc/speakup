@@ -14,6 +14,24 @@ from .models import Attendance
 _token_cache = {"token": None, "expires_at": 0}
 
 
+def _raise_for_zoom(response):
+    """Like ``response.raise_for_status()`` but folds Zoom's JSON error body
+    (``{"code", "message"}``) into the exception text, so failures surface the
+    actual reason instead of a bare status line. Preserves ``HTTPError`` (with
+    ``.response``) so callers can still branch on the status code."""
+    try:
+        response.raise_for_status()
+    except requests.HTTPError as exc:
+        detail = ""
+        try:
+            detail = response.json().get("message", "")
+        except ValueError:
+            detail = (response.text or "")[:200]
+        if detail:
+            raise requests.HTTPError(f"{exc} — {detail}", response=response) from exc
+        raise
+
+
 def extract_zoom_meeting_id(url):
     """Extract the numeric meeting ID from a Zoom join URL (.../j/<id>)."""
     match = re.search(r"/j/(\d+)", url)
@@ -45,7 +63,7 @@ def get_zoom_access_token():
         auth=(settings.ZOOM_CLIENT_ID, settings.ZOOM_CLIENT_SECRET),
         timeout=10,
     )
-    response.raise_for_status()
+    _raise_for_zoom(response)
     data = response.json()
 
     _token_cache["token"] = data["access_token"]
@@ -84,7 +102,7 @@ def fetch_zoom_registrants(meeting_id):
             params=params,
             timeout=10,
         )
-        response.raise_for_status()
+        _raise_for_zoom(response)
         data = response.json()
 
         registrants.extend(data.get("registrants", []))
@@ -108,7 +126,7 @@ def fetch_past_meeting_instances(meeting_id):
         headers={"Authorization": f"Bearer {token}"},
         timeout=10,
     )
-    response.raise_for_status()
+    _raise_for_zoom(response)
     return response.json().get("meetings", [])
 
 
@@ -156,7 +174,7 @@ def _paginate_participants(url, token):
             params=params,
             timeout=10,
         )
-        response.raise_for_status()
+        _raise_for_zoom(response)
         data = response.json()
         participants.extend(data.get("participants", []))
         next_page_token = data.get("next_page_token", "")
