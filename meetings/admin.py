@@ -219,7 +219,7 @@ class MeetingAdmin(admin.ModelAdmin):
             # The other fieldset on the form (Notes, inside each
             # MeetingRole row) intentionally stays Django-default.
             "classes": ("collapse", "meeting-admin-section"),
-            "fields": ("meeting_type", "date", "theme", "zoom_link"),
+            "fields": ("meeting_type", "date", "theme", "zoom_link", "zoom_meeting_id"),
         }),
     )
 
