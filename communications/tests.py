@@ -69,6 +69,45 @@ class EmailReviewTest(TestCase):
         self.assertEqual(mr.feedback_sent_notes, "Well done")  # stamped once
         self.assertTrue(any("Well done" in msg.body for msg in mail.outbox))
 
+    # --- register (Zoom registration nudge) ---
+
+    def _remote_meeting(self):
+        m = Meeting.objects.create(
+            date=timezone.now() + timedelta(days=3),
+            zoom_link="https://zoom.us/j/1234567890")
+        role = Role.objects.create(name="Speaker")
+        remy = User.objects.create_user(
+            "remy", "remy@example.com", "pw", first_name="Remy")
+        MeetingRole.objects.create(
+            meeting=m, role=role, user=remy, in_person=False)
+        return m
+
+    @patch("meetings.zoom.fetch_zoom_registrants")
+    def test_register_get_renders_unregistered_remote(self, mock_fetch):
+        mock_fetch.return_value = []  # nobody registered yet
+        m = self._remote_meeting()
+        resp = self.client.get(self.url, {"workflow": "register", "meeting": m.id})
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "not yet registered")
+
+    @patch("meetings.zoom.fetch_zoom_registrants")
+    def test_register_post_sends(self, mock_fetch):
+        mock_fetch.return_value = []
+        m = self._remote_meeting()
+        resp = self.client.post(self.url, {"workflow": "register", "meeting": m.id})
+        self.assertEqual(resp.status_code, 302)
+        self.assertTrue(any(msg.to == ["remy@example.com"] for msg in mail.outbox))
+
+    @patch("meetings.zoom.fetch_zoom_registrants")
+    def test_register_build_failure_redirects_without_sending(self, mock_fetch):
+        # If the Zoom API is unreachable, the hardened view shows an error and
+        # redirects — it must not 500 or email everyone.
+        mock_fetch.side_effect = Exception("Zoom unreachable")
+        m = self._remote_meeting()
+        resp = self.client.get(self.url, {"workflow": "register", "meeting": m.id})
+        self.assertEqual(resp.status_code, 302)
+        self.assertEqual(len(mail.outbox), 0)
+
     # --- announcement ---
 
     def test_announcement_post_edits_and_stamps_sent_at(self):

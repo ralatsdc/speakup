@@ -104,7 +104,7 @@
         <div class="text-center mb-4 d-flex flex-wrap justify-content-center gap-2">
             {% if meeting.zoom_link %}
             <a href="{{ meeting.zoom_link }}" class="btn btn-primary" target="_blank">
-                Join via Zoom
+                Register &amp; Join via Zoom
             </a>
             {% endif %}
             <a href="{% url 'meeting_agenda_download' meeting.id %}" class="btn btn-outline-primary">

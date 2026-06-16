@@ -283,19 +283,28 @@ class MeetingAdmin(admin.ModelAdmin):
     def process_feedback(self, request, meeting_id):
         return HttpResponseRedirect(_review_url("feedback", meeting=meeting_id))
 
-    def process_zoom_import(self, request, meeting_id):
-        # Feature is currently disabled — the underlying code is preserved
-        # in meetings/zoom.py for if/when the registration flow comes back.
-        if not settings.ZOOM_REGISTRATION_ENABLED:
+    def process_register_reminders(self, request, meeting_id):
+        if not settings.ZOOM_INTEGRATION_ENABLED:
             self.message_user(
                 request,
-                "Zoom registrant import is disabled "
-                "(set ZOOM_REGISTRATION_ENABLED=true to re-enable).",
+                "Zoom integration is disabled "
+                "(set ZOOM_INTEGRATION_ENABLED=true to enable).",
+                messages.WARNING,
+            )
+            return HttpResponseRedirect(f"../../{meeting_id}/change/")
+        return HttpResponseRedirect(_review_url("register", meeting=meeting_id))
+
+    def process_zoom_import(self, request, meeting_id):
+        if not settings.ZOOM_INTEGRATION_ENABLED:
+            self.message_user(
+                request,
+                "Zoom integration is disabled "
+                "(set ZOOM_INTEGRATION_ENABLED=true to enable).",
                 messages.WARNING,
             )
             return HttpResponseRedirect(f"../../{meeting_id}/change/")
 
-        from .zoom import import_zoom_registrants
+        from .zoom import import_zoom_participants
 
         meeting = self.get_object(request, meeting_id)
 
@@ -306,7 +315,7 @@ class MeetingAdmin(admin.ModelAdmin):
             return HttpResponseRedirect(f"../../{meeting_id}/change/")
 
         try:
-            members_count, guests_count, skipped_count = import_zoom_registrants(meeting)
+            members_count, guests_count, skipped_count = import_zoom_participants(meeting)
         except Exception as e:
             self.message_user(request, f"Zoom import failed: {e}", messages.ERROR)
             return HttpResponseRedirect(f"../../{meeting_id}/change/")
@@ -339,14 +348,16 @@ class MeetingAdmin(admin.ModelAdmin):
         if "_send-feedback" in request.POST:
             return self.process_feedback(request, obj.pk)
         if "_import-zoom" in request.POST:
-            # process_zoom_import enforces ZOOM_REGISTRATION_ENABLED itself.
+            # process_zoom_import enforces ZOOM_INTEGRATION_ENABLED itself.
             return self.process_zoom_import(request, obj.pk)
+        if "_send-register" in request.POST:
+            return self.process_register_reminders(request, obj.pk)
         return super().response_change(request, obj)
 
     def change_view(self, request, object_id, form_url="", extra_context=None):
         """Expose flags + JS-needed data to the change-form template."""
         extra_context = extra_context or {}
-        extra_context["zoom_registration_enabled"] = settings.ZOOM_REGISTRATION_ENABLED
+        extra_context["zoom_integration_enabled"] = settings.ZOOM_INTEGRATION_ENABLED
         # IDs the inline JS uses to live-toggle the evaluates field row.
         extra_context["evaluator_role_ids"] = list(
             Role.objects.filter(is_evaluator_role=True).values_list("id", flat=True)

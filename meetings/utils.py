@@ -25,6 +25,20 @@ def send_meeting_reminders(meeting, edits=None):
         raise
 
 
+def send_meeting_register_reminders(meeting, edits=None):
+    """Email remote role-takers who haven't registered on Zoom yet, asking them
+    to register. ``edits`` optionally overrides the subject/body templates."""
+    from .emails import build_register_draft
+    from communications.emails import build_messages, send_messages
+
+    messages = build_messages(build_register_draft(meeting)["groups"], edits)
+    try:
+        return send_messages(messages)
+    except Exception:
+        logger.exception("Failed to send register reminders for %s", meeting)
+        raise
+
+
 def send_meeting_feedback(meeting, edits=None):
     """Send role feedback (members whose ``admin_notes`` is new/changed) and
     guest thank-yous (once per guest), then stamp what went out so repeats

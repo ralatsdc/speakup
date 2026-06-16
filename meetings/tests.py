@@ -20,7 +20,12 @@ from .models import (
     RoleGuideEmailLog,
 )
 from .services import convert_guest_attendance_to_user
-from .zoom import extract_zoom_meeting_id, import_zoom_registrants
+from .zoom import (
+    extract_zoom_meeting_id,
+    import_zoom_participants,
+    resolve_meeting_id,
+    select_occurrence_uuid,
+)
 
 
 class MeetingSignalTest(TestCase):
@@ -591,7 +596,10 @@ class ZoomUrlParsingTest(TestCase):
         self.assertIsNone(extract_zoom_meeting_id(""))
 
 
-class ZoomImportTest(TestCase):
+class ZoomParticipantsImportTest(TestCase):
+    """import_zoom_participants: resolve the occurrence by date, match joiners
+    to members by email then unique name, else create guests, with dedup."""
+
     def setUp(self):
         self.meeting_date = timezone.now()
         self.meeting = Meeting.objects.create(
@@ -599,98 +607,166 @@ class ZoomImportTest(TestCase):
             zoom_link="https://zoom.us/j/1234567890",
         )
         self.member = User.objects.create_user(
-            username="alice", password="pass", email="alice@example.com", first_name="Alice"
+            username="alice", password="pass", email="alice@example.com",
+            first_name="Alice", last_name="Smith",
         )
-        # A create_time within the registration window (1 day before meeting)
-        self.valid_time = (self.meeting_date - timezone.timedelta(days=1)).strftime(
-            "%Y-%m-%dT%H:%M:%SZ"
-        )
+        self.instances = [{"uuid": "abc/123==", "start_time": self._iso(self.meeting_date)}]
 
-    def _reg(self, email, first_name="Test", last_name="User", create_time=None):
-        return {
-            "email": email,
-            "first_name": first_name,
-            "last_name": last_name,
-            "create_time": create_time or self.valid_time,
-        }
+    def _iso(self, dt):
+        return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    @patch("meetings.zoom.fetch_zoom_registrants")
-    def test_matches_member_by_email(self, mock_fetch):
-        mock_fetch.return_value = [self._reg("alice@example.com", "Alice", "Smith")]
-        members, guests, skipped = import_zoom_registrants(self.meeting)
-        self.assertEqual(members, 1)
-        self.assertEqual(guests, 0)
-        self.assertEqual(skipped, 0)
-        self.assertTrue(Attendance.objects.filter(meeting=self.meeting, user=self.member).exists())
+    def _p(self, name, email="", join_time=None):
+        # Shape returned by fetch_zoom_participants (already normalized).
+        return {"name": name, "email": email,
+                "join_time": join_time or self._iso(self.meeting_date)}
 
-    @patch("meetings.zoom.fetch_zoom_registrants")
-    def test_creates_guest_for_unknown_email(self, mock_fetch):
-        mock_fetch.return_value = [self._reg("stranger@example.com", "Bob", "Jones")]
-        members, guests, skipped = import_zoom_registrants(self.meeting)
-        self.assertEqual(members, 0)
-        self.assertEqual(guests, 1)
-        att = Attendance.objects.get(meeting=self.meeting, guest_email="stranger@example.com")
-        self.assertEqual(att.guest_first_name, "Bob")
+    @patch("meetings.zoom.fetch_zoom_participants")
+    @patch("meetings.zoom.fetch_past_meeting_instances")
+    def test_matches_member_by_email(self, mock_instances, mock_participants):
+        mock_instances.return_value = self.instances
+        mock_participants.return_value = [self._p("Alice Smith", "alice@example.com")]
+        members, guests, skipped = import_zoom_participants(self.meeting)
+        self.assertEqual((members, guests, skipped), (1, 0, 0))
+        self.assertTrue(Attendance.objects.filter(
+            meeting=self.meeting, user=self.member).exists())
 
-    @patch("meetings.zoom.fetch_zoom_registrants")
-    def test_skips_duplicate_member(self, mock_fetch):
-        Attendance.objects.create(meeting=self.meeting, user=self.member)
-        mock_fetch.return_value = [self._reg("alice@example.com", "Alice", "Smith")]
-        members, guests, skipped = import_zoom_registrants(self.meeting)
-        self.assertEqual(members, 0)
-        self.assertEqual(skipped, 1)
+    @patch("meetings.zoom.fetch_zoom_participants")
+    @patch("meetings.zoom.fetch_past_meeting_instances")
+    def test_matches_member_by_name_when_no_email(self, mock_instances, mock_participants):
+        mock_instances.return_value = self.instances
+        mock_participants.return_value = [self._p("Alice Smith")]  # no email
+        members, guests, skipped = import_zoom_participants(self.meeting)
+        self.assertEqual((members, guests, skipped), (1, 0, 0))
+        self.assertTrue(Attendance.objects.filter(
+            meeting=self.meeting, user=self.member).exists())
 
-    @patch("meetings.zoom.fetch_zoom_registrants")
-    def test_skips_duplicate_guest(self, mock_fetch):
-        Attendance.objects.create(
-            meeting=self.meeting, guest_first_name="Bob", guest_last_name="Jones",
-            guest_email="stranger@example.com",
-        )
-        mock_fetch.return_value = [self._reg("stranger@example.com", "Bob", "Jones")]
-        members, guests, skipped = import_zoom_registrants(self.meeting)
-        self.assertEqual(guests, 0)
-        self.assertEqual(skipped, 1)
+    @patch("meetings.zoom.fetch_zoom_participants")
+    @patch("meetings.zoom.fetch_past_meeting_instances")
+    def test_creates_guest_for_unknown(self, mock_instances, mock_participants):
+        mock_instances.return_value = self.instances
+        mock_participants.return_value = [self._p("Bob Jones", "bob@example.com")]
+        members, guests, skipped = import_zoom_participants(self.meeting)
+        self.assertEqual((members, guests, skipped), (0, 1, 0))
+        att = Attendance.objects.get(meeting=self.meeting, guest_email="bob@example.com")
+        self.assertEqual((att.guest_first_name, att.guest_last_name), ("Bob", "Jones"))
 
-    @patch("meetings.zoom.fetch_zoom_registrants")
-    def test_filters_out_old_registrants(self, mock_fetch):
-        """Registrants from a previous meeting's window should be excluded."""
-        # Create a previous meeting 14 days ago
-        prev_date = self.meeting_date - timezone.timedelta(days=14)
-        Meeting.objects.create(date=prev_date, zoom_link="https://zoom.us/j/1234567890")
-
-        old_time = (prev_date - timezone.timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
-        mock_fetch.return_value = [
-            self._reg("alice@example.com", "Alice", "Smith", create_time=old_time),
-            self._reg("stranger@example.com", "Bob", "Jones", create_time=self.valid_time),
+    @patch("meetings.zoom.fetch_zoom_participants")
+    @patch("meetings.zoom.fetch_past_meeting_instances")
+    def test_dedups_rejoins(self, mock_instances, mock_participants):
+        mock_instances.return_value = self.instances
+        mock_participants.return_value = [
+            self._p("Alice Smith", "alice@example.com"),
+            self._p("Alice Smith", "alice@example.com"),  # rejoined
         ]
-        members, guests, skipped = import_zoom_registrants(self.meeting)
-        # Alice's old registration is filtered out; only Bob (unknown email) imported as guest
-        self.assertEqual(members, 0)
-        self.assertEqual(guests, 1)
-        self.assertFalse(Attendance.objects.filter(meeting=self.meeting, user=self.member).exists())
+        members, guests, skipped = import_zoom_participants(self.meeting)
+        self.assertEqual((members, guests, skipped), (1, 0, 0))
 
-    @patch("meetings.zoom.fetch_zoom_registrants")
-    def test_includes_registrants_within_window(self, mock_fetch):
-        """Registrants created after the previous meeting should be included."""
-        prev_date = self.meeting_date - timezone.timedelta(days=7)
-        Meeting.objects.create(date=prev_date, zoom_link="https://zoom.us/j/1234567890")
+    @patch("meetings.zoom.fetch_zoom_participants")
+    @patch("meetings.zoom.fetch_past_meeting_instances")
+    def test_skips_existing_member(self, mock_instances, mock_participants):
+        Attendance.objects.create(meeting=self.meeting, user=self.member)
+        mock_instances.return_value = self.instances
+        mock_participants.return_value = [self._p("Alice Smith", "alice@example.com")]
+        members, guests, skipped = import_zoom_participants(self.meeting)
+        self.assertEqual((members, guests, skipped), (0, 0, 1))
 
-        # Registered 3 days before this meeting (after prev meeting)
-        recent_time = (self.meeting_date - timezone.timedelta(days=3)).strftime(
-            "%Y-%m-%dT%H:%M:%SZ"
+    @patch("meetings.zoom.fetch_zoom_participants")
+    @patch("meetings.zoom.fetch_past_meeting_instances")
+    def test_skips_existing_noemail_guest(self, mock_instances, mock_participants):
+        Attendance.objects.create(
+            meeting=self.meeting, guest_first_name="Bob", guest_last_name="Jones")
+        mock_instances.return_value = self.instances
+        mock_participants.return_value = [self._p("Bob Jones")]  # no email
+        members, guests, skipped = import_zoom_participants(self.meeting)
+        self.assertEqual((members, guests, skipped), (0, 0, 1))
+
+    @patch("meetings.zoom.fetch_zoom_participants")
+    @patch("meetings.zoom.fetch_past_meeting_instances")
+    def test_ambiguous_name_becomes_guest(self, mock_instances, mock_participants):
+        # A second active "Alice Smith" makes the name ambiguous, so a no-email
+        # participant by that name can't be confidently matched → guest.
+        User.objects.create_user(
+            username="alice2", password="pass", email="alice2@example.com",
+            first_name="Alice", last_name="Smith",
         )
-        mock_fetch.return_value = [self._reg("alice@example.com", "Alice", "Smith", create_time=recent_time)]
-        members, guests, skipped = import_zoom_registrants(self.meeting)
-        self.assertEqual(members, 1)
+        mock_instances.return_value = self.instances
+        mock_participants.return_value = [self._p("Alice Smith")]  # no email
+        members, guests, skipped = import_zoom_participants(self.meeting)
+        self.assertEqual((members, guests, skipped), (0, 1, 0))
+
+    @patch("meetings.zoom.fetch_past_meeting_instances")
+    def test_no_occurrence_for_date_raises(self, mock_instances):
+        mock_instances.return_value = []
+        with self.assertRaises(ValueError):
+            import_zoom_participants(self.meeting)
 
     def test_missing_zoom_link(self):
         meeting_no_link = Meeting.objects.create(date=timezone.now())
         with self.assertRaises(ValueError):
-            import_zoom_registrants(meeting_no_link)
+            import_zoom_participants(meeting_no_link)
+
+    def test_select_occurrence_picks_closest_in_window(self):
+        insts = [
+            {"uuid": "far", "start_time": self._iso(
+                self.meeting_date - timezone.timedelta(days=10))},
+            {"uuid": "near", "start_time": self._iso(self.meeting_date)},
+        ]
+        self.assertEqual(
+            select_occurrence_uuid(insts, self.meeting_date), "near")
+
+    def test_select_occurrence_none_outside_window(self):
+        insts = [{"uuid": "far", "start_time": self._iso(
+            self.meeting_date - timezone.timedelta(days=10))}]
+        self.assertIsNone(select_occurrence_uuid(insts, self.meeting_date))
+
+    def test_resolve_meeting_id_prefers_meeting_type_field(self):
+        # Real-world case: zoom_link is a registration URL with no numeric ID;
+        # the meeting type supplies the ID (spaces tolerated).
+        mt = MeetingType.objects.create(name="Regular", zoom_meeting_id="812 3456 7890")
+        m = Meeting.objects.create(
+            date=timezone.now(), meeting_type=mt,
+            zoom_link="https://us02web.zoom.us/meeting/register/tZcuOpaque")
+        self.assertEqual(resolve_meeting_id(m), "81234567890")
+
+    def test_resolve_meeting_id_falls_back_to_join_link(self):
+        # No meeting type / no configured ID → parse a /j/ link if present.
+        self.assertEqual(resolve_meeting_id(self.meeting), "1234567890")
+
+    def test_raise_for_zoom_surfaces_api_message(self):
+        import requests
+        from unittest.mock import Mock
+        from .zoom import _raise_for_zoom
+        resp = Mock()
+        resp.raise_for_status.side_effect = requests.HTTPError("400 Client Error")
+        resp.json.return_value = {"code": 300, "message": "Invalid meeting ID"}
+        with self.assertRaises(requests.HTTPError) as cm:
+            _raise_for_zoom(resp)
+        self.assertIn("Invalid meeting ID", str(cm.exception))
+
+    def test_resolve_meeting_id_none_when_unavailable(self):
+        m = Meeting.objects.create(
+            date=timezone.now(),
+            zoom_link="https://us02web.zoom.us/meeting/register/tZcuOpaque")
+        self.assertIsNone(resolve_meeting_id(m))
+
+    @patch("meetings.zoom.fetch_zoom_participants")
+    @patch("meetings.zoom.fetch_past_meeting_instances")
+    def test_import_uses_meeting_type_id_with_registration_url(
+            self, mock_instances, mock_participants):
+        mt = MeetingType.objects.create(name="Regular", zoom_meeting_id="81234567890")
+        m = Meeting.objects.create(
+            date=self.meeting_date, meeting_type=mt,
+            zoom_link="https://us02web.zoom.us/meeting/register/tZcuOpaque")
+        mock_instances.return_value = [
+            {"uuid": "abc==", "start_time": self._iso(self.meeting_date)}]
+        mock_participants.return_value = [self._p("Alice Smith", "alice@example.com")]
+        members, guests, skipped = import_zoom_participants(m)
+        self.assertEqual((members, guests, skipped), (1, 0, 0))
+        mock_instances.assert_called_once_with("81234567890")
 
 
-class ZoomRegistrationFlagTest(TestCase):
-    """Verify the ZOOM_REGISTRATION_ENABLED gate hides the admin button and
+class ZoomIntegrationFlagTest(TestCase):
+    """Verify the ZOOM_INTEGRATION_ENABLED gate hides the admin buttons and
     rejects the import action."""
 
     def setUp(self):
@@ -705,30 +781,82 @@ class ZoomRegistrationFlagTest(TestCase):
             zoom_link="https://us02web.zoom.us/j/1234567890",
         )
 
-    @override_settings(ZOOM_REGISTRATION_ENABLED=False)
-    def test_button_hidden_when_flag_off(self):
+    @override_settings(ZOOM_INTEGRATION_ENABLED=False)
+    def test_buttons_hidden_when_flag_off(self):
         response = self.client.get(
             reverse("admin:meetings_meeting_change", args=[self.meeting.pk])
         )
         self.assertEqual(response.status_code, 200)
-        self.assertNotContains(response, "Import Zoom Registrants")
+        self.assertNotContains(response, "Import Zoom Attendance")
+        self.assertNotContains(response, "Email Remote to Register")
 
-    @override_settings(ZOOM_REGISTRATION_ENABLED=True)
-    def test_button_visible_when_flag_on(self):
+    @override_settings(ZOOM_INTEGRATION_ENABLED=True)
+    def test_buttons_visible_when_flag_on(self):
         response = self.client.get(
             reverse("admin:meetings_meeting_change", args=[self.meeting.pk])
         )
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Import Zoom Registrants")
+        self.assertContains(response, "Import Zoom Attendance")
+        self.assertContains(response, "Email Remote to Register")
 
-    @override_settings(ZOOM_REGISTRATION_ENABLED=False)
-    @patch("meetings.zoom.import_zoom_registrants")
+    @override_settings(ZOOM_INTEGRATION_ENABLED=False)
+    @patch("meetings.zoom.import_zoom_participants")
     def test_import_action_blocked_when_flag_off(self, mock_import):
         response = self.client.post(
             reverse("admin:meeting-zoom-import", args=[self.meeting.pk])
         )
         self.assertEqual(response.status_code, 302)
         mock_import.assert_not_called()
+
+
+class RegisterReminderTest(TestCase):
+    """build_register_draft: nudge remote role-takers who haven't registered on
+    Zoom yet, excluding in-person sign-ups and already-registered members."""
+
+    def setUp(self):
+        self.meeting = Meeting.objects.create(
+            date=timezone.now(), zoom_link="https://zoom.us/j/1234567890")
+        self.role = Role.objects.create(name="Speaker")
+        self.remote = User.objects.create_user(
+            username="remy", password="pass", email="remy@example.com",
+            first_name="Remy", last_name="Remote")
+        self.registered = User.objects.create_user(
+            username="reg", password="pass", email="reg@example.com",
+            first_name="Reggie", last_name="Registered")
+        self.inperson = User.objects.create_user(
+            username="ina", password="pass", email="ina@example.com",
+            first_name="Ina", last_name="Person")
+        MeetingRole.objects.create(
+            meeting=self.meeting, role=self.role, user=self.remote,
+            in_person=False, sort_order=0)
+        MeetingRole.objects.create(
+            meeting=self.meeting, role=self.role, user=self.registered,
+            in_person=False, sort_order=1)
+        MeetingRole.objects.create(
+            meeting=self.meeting, role=self.role, user=self.inperson,
+            in_person=True, sort_order=2)
+
+    @patch("meetings.zoom.fetch_zoom_registrants")
+    def test_recipients_are_unregistered_remote_only(self, mock_fetch):
+        from .emails import build_register_draft
+        mock_fetch.return_value = [{"email": "reg@example.com"}]
+        draft = build_register_draft(self.meeting)
+        emails = {r["email"] for g in draft["groups"] for r in g["recipients"]}
+        self.assertEqual(emails, {"remy@example.com"})
+        # The body points people at the Zoom link to register.
+        body = draft["groups"][0]["body"]
+        self.assertIn("{zoom_url}", body)
+        self.assertEqual(
+            draft["groups"][0]["recipients"][0]["context"]["zoom_url"],
+            self.meeting.zoom_link)
+
+    @patch("meetings.zoom.fetch_zoom_registrants")
+    def test_no_groups_when_all_registered(self, mock_fetch):
+        from .emails import build_register_draft
+        mock_fetch.return_value = [
+            {"email": "remy@example.com"}, {"email": "reg@example.com"}]
+        draft = build_register_draft(self.meeting)
+        self.assertEqual(draft["groups"], [])
 
 
 class EvaluatorPairingTest(TestCase):
