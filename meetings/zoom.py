@@ -41,10 +41,14 @@ def extract_zoom_meeting_id(url):
 
 
 def resolve_meeting_id(meeting):
-    """The numeric Zoom meeting ID to use for API calls. Prefers the meeting
-    type's ``zoom_meeting_id`` — the stored zoom_link is a registration URL
-    with no numeric ID — falling back to a /j/ join link if one happens to be
-    set on the meeting. Returns None if neither is available."""
+    """The numeric Zoom meeting ID to use for API calls. Prefers the meeting's
+    own ``zoom_meeting_id`` (paired with its zoom_link), then the meeting
+    type's default, then a /j/ join link if one happens to be set. The stored
+    zoom_link is a registration URL with no numeric ID, so it can't supply one.
+    Returns None if nothing is available."""
+    own = (meeting.zoom_meeting_id or "").replace(" ", "")
+    if own:
+        return own
     meeting_type = meeting.meeting_type
     configured = (getattr(meeting_type, "zoom_meeting_id", "") or "").replace(" ", "")
     if configured:

@@ -719,18 +719,32 @@ class ZoomParticipantsImportTest(TestCase):
             self.meeting_date - timezone.timedelta(days=10))}]
         self.assertIsNone(select_occurrence_uuid(insts, self.meeting_date))
 
-    def test_resolve_meeting_id_prefers_meeting_type_field(self):
-        # Real-world case: zoom_link is a registration URL with no numeric ID;
-        # the meeting type supplies the ID (spaces tolerated).
-        mt = MeetingType.objects.create(name="Regular", zoom_meeting_id="812 3456 7890")
-        m = Meeting.objects.create(
-            date=timezone.now(), meeting_type=mt,
-            zoom_link="https://us02web.zoom.us/meeting/register/tZcuOpaque")
-        self.assertEqual(resolve_meeting_id(m), "81234567890")
+    def test_resolve_prefers_meetings_own_id(self):
+        # The meeting's own id wins (spaces tolerated).
+        self.meeting.zoom_meeting_id = "812 3456 7890"
+        self.assertEqual(resolve_meeting_id(self.meeting), "81234567890")
+
+    def test_resolve_falls_back_to_meeting_type(self):
+        # Own id empty (e.g. a meeting predating the type's id) → use the type.
+        mt = MeetingType.objects.create(name="Regular", zoom_meeting_id="555")
+        m = Meeting.objects.create(date=timezone.now(), meeting_type=mt)
+        m.zoom_meeting_id = ""
+        self.assertEqual(resolve_meeting_id(m), "555")
 
     def test_resolve_meeting_id_falls_back_to_join_link(self):
-        # No meeting type / no configured ID → parse a /j/ link if present.
+        # No own id / no type → parse a /j/ link if present.
         self.assertEqual(resolve_meeting_id(self.meeting), "1234567890")
+
+    def test_meeting_inherits_zoom_id_from_type_on_create(self):
+        # The post_save signal copies the type's id (and link) onto the meeting,
+        # mirroring zoom_link, so the pair travels together per meeting.
+        mt = MeetingType.objects.create(
+            name="Regular", zoom_meeting_id="83367036514",
+            zoom_link="https://us02web.zoom.us/meeting/register/tZcuOpaque")
+        m = Meeting.objects.create(date=timezone.now(), meeting_type=mt)
+        m.refresh_from_db()
+        self.assertEqual(m.zoom_meeting_id, "83367036514")
+        self.assertEqual(m.zoom_link, mt.zoom_link)
 
     def test_raise_for_zoom_surfaces_api_message(self):
         import requests

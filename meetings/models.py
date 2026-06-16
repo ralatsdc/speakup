@@ -141,7 +141,20 @@ class Meeting(models.Model):
     theme = models.CharField(max_length=200, blank=True)
     word_of_the_day = models.CharField(max_length=50, blank=True)
 
-    zoom_link = models.URLField(blank=True)
+    # zoom_link and zoom_meeting_id are a pair: the link is the public
+    # registration URL members click; the ID identifies the same Zoom meeting
+    # to the API (attendance/registrant lookups). Both are copied from the
+    # MeetingType at creation and can be overridden together here — if you
+    # point a meeting at a different Zoom meeting, update both.
+    zoom_link = models.URLField(
+        blank=True, help_text="Public Zoom registration URL members click."
+    )
+    zoom_meeting_id = models.CharField(
+        max_length=20,
+        blank=True,
+        help_text="Numeric Zoom meeting ID for this meeting's link, used for "
+        "attendance/registrant API calls. Keep in sync with the link above.",
+    )
 
     def __str__(self):
         return f"{self.date.strftime('%Y-%m-%d')} ({self.meeting_type})"
@@ -405,9 +418,15 @@ def populate_meeting_from_type(sender, instance, created, raw=False, **kwargs):
         return
     if created and instance.meeting_type:
         try:
+            zoom_updates = []
             if instance.meeting_type.zoom_link and not instance.zoom_link:
                 instance.zoom_link = instance.meeting_type.zoom_link
-                instance.save(update_fields=["zoom_link"])
+                zoom_updates.append("zoom_link")
+            if instance.meeting_type.zoom_meeting_id and not instance.zoom_meeting_id:
+                instance.zoom_meeting_id = instance.meeting_type.zoom_meeting_id
+                zoom_updates.append("zoom_meeting_id")
+            if zoom_updates:
+                instance.save(update_fields=zoom_updates)
             for mts in instance.meeting_type.sessions.select_related("session"):
                 MeetingSession.objects.create(
                     meeting=instance,
