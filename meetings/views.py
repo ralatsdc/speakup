@@ -409,9 +409,11 @@ def role_signups(request):
     """Role sign-up page: upcoming meetings with their role tables. Logged-in
     members claim or drop roles here; anonymous visitors see a read-only
     roster."""
-    now = timezone.now()
+    # Keep a meeting listed through the whole day it occurs; drop it the next
+    # day. Comparing the calendar date (not the datetime) avoids hiding a
+    # meeting once its start time has passed earlier that same day.
     meetings_qs = (
-        Meeting.objects.filter(date__gte=now)
+        Meeting.objects.filter(date__date__gte=timezone.localdate())
         .order_by("date")
         .prefetch_related("meeting_sessions__session")
     )
@@ -593,7 +595,7 @@ def save_role_details(request, role_id):
 
 def checkin_kiosk(request):
     """Displays the check-in grid for today's meeting (or the next upcoming one)."""
-    today = timezone.now().date()
+    today = timezone.localdate()
     meeting = Meeting.objects.filter(date__date=today).first()
 
     if not meeting:

@@ -151,14 +151,18 @@ def send_first_time_role_email(meeting_role):
 
 
 def upcoming_meetings_with_open_role(role, now=None):
-    """Upcoming meetings (date >= now) that have an unfilled slot for ``role``,
-    earliest first. Used to make a role invite actionable."""
+    """Upcoming meetings (occurring today or later) that have an unfilled slot
+    for ``role``, earliest first. Used to make a role invite actionable. A
+    meeting stays eligible through the whole day it occurs, not just until its
+    start time."""
     from django.utils import timezone
     from .models import Meeting
 
     now = now or timezone.now()
+    today = timezone.localtime(now).date()
     return (
-        Meeting.objects.filter(date__gte=now, roles__role=role,
+        Meeting.objects.filter(date__date__gte=today,
+                               roles__role=role,
                                roles__user__isnull=True)
         .distinct()
         .order_by("date")

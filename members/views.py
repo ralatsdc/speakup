@@ -211,8 +211,12 @@ def _member_activity(member, start_dt=None, end_dt=None):
             "last_taken": agg["last_taken"] if agg else None,
         })
 
-    # Invites are pointless with no upcoming meeting to sign up for.
-    upcoming_exists = Meeting.objects.filter(date__gte=timezone.now()).exists()
+    # Invites are pointless with no upcoming meeting to sign up for. Count a
+    # meeting as upcoming through the whole day it occurs, matching the invite
+    # query in upcoming_meetings_with_open_role.
+    upcoming_exists = Meeting.objects.filter(
+        date__date__gte=timezone.localdate()
+    ).exists()
 
     return {
         "meeting_rows": meeting_rows,

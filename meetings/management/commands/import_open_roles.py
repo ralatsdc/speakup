@@ -21,6 +21,7 @@ Rules (agreed with the club owner):
 
 import datetime as dt
 from collections import defaultdict
+from zoneinfo import ZoneInfo
 
 from django.core.management.base import BaseCommand
 from django.db import transaction
@@ -36,7 +37,8 @@ from import_scripts import parse_open_roles as P
 from import_scripts import resolve as R
 
 CUTOFF = dt.date(2024, 7, 1)
-MEETING_TIME = dt.time(18, 45)  # 6:45 PM start
+MEETING_TIME = dt.time(18, 45)  # 6:45 PM start, local Cambridge time
+CLUB_TZ = ZoneInfo("America/New_York")
 
 
 class _Rollback(Exception):
@@ -155,7 +157,10 @@ class Command(BaseCommand):
     def _build_meeting(self, plan, mtypes, roles_by_name, report):
         m = plan["m"]
         mt = mtypes.get(m["type"])
-        when = timezone.make_aware(dt.datetime.combine(m["date"], MEETING_TIME))
+        # Stamp the 6:45 PM start in Cambridge time explicitly (DST-aware), so
+        # the stored instant is correct regardless of the project TIME_ZONE.
+        when = timezone.make_aware(
+            dt.datetime.combine(m["date"], MEETING_TIME), CLUB_TZ)
         meeting = Meeting.objects.create(meeting_type=mt, date=when)
         report["created"] += 1
 
