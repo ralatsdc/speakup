@@ -1,5 +1,5 @@
 <!-- meetings/templates/meetings/partials/role_row.html -->
-<tr id="role-row-{{ assignment.id }}">
+<tr id="role-row-{{ assignment.id }}"{% if oob %} hx-swap-oob="true"{% endif %}>
     <!-- Column 1: Role -->
     <td class="fw-bold align-middle">
         {{ assignment.role.name }}

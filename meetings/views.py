@@ -12,6 +12,7 @@ from django.contrib.auth.decorators import login_required, user_passes_test
 from django.core.paginator import Paginator
 from django.http import HttpResponse, HttpResponseForbidden
 from django.shortcuts import get_object_or_404, render
+from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
@@ -432,14 +433,59 @@ def role_signups(request):
     )
 
 
-def _role_row_response(request, assignment, triggers=None):
-    """Render the role-row partial, optionally attaching HX-Trigger events."""
-    response = render(
-        request, "meetings/partials/role_row.html", {"assignment": assignment}
+def _role_row_response(request, assignment, triggers=None, oob_rows=None):
+    """Render the role-row partial, optionally attaching HX-Trigger events.
+
+    ``oob_rows`` is an iterable of other MeetingRole rows changed by the same
+    action (linked single-holder slots); each is appended as an HTMX
+    out-of-band swap so the page updates them in place too.
+    """
+    html = render_to_string(
+        "meetings/partials/role_row.html",
+        {"assignment": assignment},
+        request=request,
     )
+    for row in oob_rows or []:
+        html += render_to_string(
+            "meetings/partials/role_row.html",
+            {"assignment": row, "oob": True},
+            request=request,
+        )
+    response = HttpResponse(html)
     if triggers:
         response["HX-Trigger"] = json.dumps(triggers)
     return response
+
+
+def _single_holder_siblings(assignment):
+    """Other slots of the same role in the same meeting, when the role is
+    configured so one member fills them all. Empty for ordinary roles."""
+    if not assignment.role.single_holder_all_slots:
+        return MeetingRole.objects.none()
+    return MeetingRole.objects.filter(
+        meeting_id=assignment.meeting_id, role_id=assignment.role_id
+    ).exclude(pk=assignment.pk)
+
+
+def _clear_member_fields(slot):
+    """Reset every member-entered field so a slot reopens clean."""
+    slot.user = None
+    slot.in_person = None
+    slot.notes = ""
+    slot.pathways_path = ""
+    slot.pathways_level = None
+    slot.pathways_project = ""
+
+
+def _mirror_member_fields(src, dst):
+    """Copy assignee and member-entered fields from one slot onto another, so
+    linked single-holder slots stay in sync."""
+    dst.user = src.user
+    dst.in_person = src.in_person
+    dst.notes = src.notes
+    dst.pathways_path = src.pathways_path
+    dst.pathways_level = src.pathways_level
+    dst.pathways_project = src.pathways_project
 
 
 def _apply_signup_fields(assignment, request):
@@ -528,22 +574,28 @@ def toggle_role(request, role_id):
 
     if assignment.user == request.user:
         # Drop: user is un-signing from their own role. Clear all
-        # member-entered fields so the slot reopens clean.
-        assignment.user = None
-        assignment.in_person = None
-        assignment.notes = ""
-        assignment.pathways_path = ""
-        assignment.pathways_level = None
-        assignment.pathways_project = ""
+        # member-entered fields so the slot reopens clean. For a single-holder
+        # role, drop every slot this member holds in the meeting at once.
+        _clear_member_fields(assignment)
         assignment.save()
-        return _role_row_response(request, assignment)
+        dropped = []
+        for sib in _single_holder_siblings(assignment).filter(user=request.user):
+            _clear_member_fields(sib)
+            sib.save()
+            dropped.append(sib)
+        return _role_row_response(request, assignment, oob_rows=dropped)
 
     elif assignment.user is None:
         # Claim: enforce one-role-per-meeting limit
-        # (officers/superusers exempt), and no guest sign ups
-        has_existing_role = MeetingRole.objects.filter(
+        # (officers/superusers exempt), and no guest sign ups. Other slots of
+        # the same single-holder role don't count against the limit — they're
+        # meant to be held together.
+        existing = MeetingRole.objects.filter(
             meeting=assignment.meeting, user=request.user
-        ).exists()
+        )
+        if assignment.role.single_holder_all_slots:
+            existing = existing.exclude(role=assignment.role)
+        has_existing_role = existing.exists()
         can_bypass = request.user.is_officer or request.user.is_superuser
 
         if has_existing_role and not can_bypass:
@@ -569,7 +621,16 @@ def toggle_role(request, role_id):
         assignment.user = request.user
         _apply_signup_fields(assignment, request)
         assignment.save()
-        return _role_row_response(request, assignment, {"closeModal": True})
+        # For a single-holder role, claim every other open slot too, copying
+        # the same attendance/notes so they stay in sync.
+        filled = []
+        for sib in _single_holder_siblings(assignment).filter(user__isnull=True):
+            _mirror_member_fields(assignment, sib)
+            sib.save()
+            filled.append(sib)
+        return _role_row_response(
+            request, assignment, {"closeModal": True}, oob_rows=filled
+        )
 
     else:
         # Already taken by someone else
@@ -590,7 +651,16 @@ def save_role_details(request, role_id):
     _apply_signup_fields(assignment, request)
     assignment.save()
 
-    return _role_row_response(request, assignment, {"closeModal": True})
+    # Keep linked single-holder slots held by the same member in sync.
+    edited = []
+    for sib in _single_holder_siblings(assignment).filter(user=assignment.user):
+        _mirror_member_fields(assignment, sib)
+        sib.save()
+        edited.append(sib)
+
+    return _role_row_response(
+        request, assignment, {"closeModal": True}, oob_rows=edited
+    )
 
 
 def checkin_kiosk(request):
