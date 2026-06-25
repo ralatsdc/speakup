@@ -1364,7 +1364,9 @@ class MemberActivityReportTest(TestCase):
         )
         Attendance.objects.create(meeting=old_meeting, user=self.member)
         self.client.login(username="officer", email="officer@example.com", password="pass")
-        today = timezone.now().date().isoformat()
+        # Use the local date: the report's range bounds are local-tz, and the
+        # meeting created at now() belongs to the local (not UTC) calendar day.
+        today = timezone.localdate().isoformat()
         url = reverse("admin:members_user_activity_report")
         response = self.client.get(url, {"start": today, "end": today})
         alice = next(m for m in response.context["members"] if m.username == "alice")

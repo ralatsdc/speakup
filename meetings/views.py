@@ -595,7 +595,7 @@ def save_role_details(request, role_id):
 
 def checkin_kiosk(request):
     """Displays the check-in grid for today's meeting (or the next upcoming one)."""
-    today = timezone.now().date()
+    today = timezone.localdate()
     meeting = Meeting.objects.filter(date__date=today).first()
 
     if not meeting:

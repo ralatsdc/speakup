@@ -142,7 +142,10 @@ MESSAGE_TAGS = {message_constants.ERROR: "danger"}
 
 # --- i18n ----------------------------------------------------------------
 LANGUAGE_CODE = "en-us"
-TIME_ZONE = "UTC"
+# The club meets in Cambridge, MA. Running in local time keeps "today" reckoned
+# at local midnight (so meetings stay listed through their whole local day) and
+# makes naive datetimes entered in the admin store at the right instant.
+TIME_ZONE = "America/New_York"
 USE_I18N = True
 USE_TZ = True
 
