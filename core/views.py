@@ -7,7 +7,13 @@ from meetings.models import Meeting
 
 def landing_page(request):
     """Public landing page with about info and upcoming meeting dates."""
-    meetings = Meeting.objects.filter(date__gte=timezone.now()).order_by("date")[:10]
+    # Keep a meeting listed through the whole day it occurs; drop it the next
+    # day. Comparing the calendar date (not the datetime) avoids hiding a
+    # meeting once its start time has passed earlier that same day.
+    meetings = (
+        Meeting.objects.filter(date__date__gte=timezone.localdate())
+        .order_by("date")[:10]
+    )
     return render(request, "core/landing.html", {"meetings": meetings})
 
 
