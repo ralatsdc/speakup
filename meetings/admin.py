@@ -32,12 +32,18 @@ class RoleAdmin(admin.ModelAdmin):
         "shows_pathways_fields",
         "is_evaluator_role",
         "is_evaluated_role",
+        "single_holder_all_slots",
         "points",
         "min_minutes",
         "max_minutes",
         "has_guide",
     )
-    list_filter = ("shows_pathways_fields", "is_evaluator_role", "is_evaluated_role")
+    list_filter = (
+        "shows_pathways_fields",
+        "is_evaluator_role",
+        "is_evaluated_role",
+        "single_holder_all_slots",
+    )
 
     @admin.display(boolean=True, description="Guide?")
     def has_guide(self, obj):

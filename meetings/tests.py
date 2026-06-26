@@ -363,6 +363,120 @@ class ToggleRoleViewTest(TestCase):
         self.assertEqual(self.assignment.user, self.user2)
 
 
+class SingleHolderRoleTest(TestCase):
+    """A role flagged single_holder_all_slots (e.g. General Evaluator) appears
+    at multiple agenda positions but is held by one member: signing up for any
+    slot claims the rest, and dropping/editing one updates them all."""
+
+    def setUp(self):
+        self.client = Client()
+        self.user = User.objects.create_user(
+            username="member1", email="member1@example.com", password="testpass")
+        self.user2 = User.objects.create_user(
+            username="member2", email="member2@example.com", password="testpass")
+        self.meeting = Meeting.objects.create(date=timezone.now())
+        self.ge_role = Role.objects.create(
+            name="General Evaluator", single_holder_all_slots=True)
+        # Two slots, mirroring the two agenda appearances.
+        self.slot_a = MeetingRole.objects.create(
+            meeting=self.meeting, role=self.ge_role, sort_order=12)
+        self.slot_b = MeetingRole.objects.create(
+            meeting=self.meeting, role=self.ge_role, sort_order=19)
+
+    def _login(self):
+        self.client.login(
+            username="member1", email="member1@example.com", password="testpass")
+
+    def test_claiming_one_slot_fills_the_other(self):
+        self._login()
+        self.client.post(
+            reverse("toggle_role", args=[self.slot_a.id]),
+            {"in_person": "false", "notes": "GE notes"},
+        )
+        self.slot_a.refresh_from_db()
+        self.slot_b.refresh_from_db()
+        self.assertEqual(self.slot_a.user, self.user)
+        self.assertEqual(self.slot_b.user, self.user)
+        # Attendance and notes are mirrored onto the sibling.
+        self.assertFalse(self.slot_b.in_person)
+        self.assertEqual(self.slot_b.notes, "GE notes")
+
+    def test_claim_response_includes_oob_sibling_row(self):
+        self._login()
+        response = self.client.post(
+            reverse("toggle_role", args=[self.slot_a.id]),
+            {"in_person": "true"},
+        )
+        # The sibling row is swapped in place via an HTMX out-of-band update.
+        self.assertContains(response, 'hx-swap-oob="true"')
+        self.assertContains(response, f'id="role-row-{self.slot_b.id}"')
+
+    def test_claim_does_not_steal_a_slot_held_by_someone_else(self):
+        self.slot_b.user = self.user2
+        self.slot_b.save()
+        self._login()
+        self.client.post(
+            reverse("toggle_role", args=[self.slot_a.id]), {"in_person": "true"})
+        self.slot_a.refresh_from_db()
+        self.slot_b.refresh_from_db()
+        self.assertEqual(self.slot_a.user, self.user)
+        self.assertEqual(self.slot_b.user, self.user2)
+
+    def test_dropping_one_slot_drops_the_other(self):
+        for slot in (self.slot_a, self.slot_b):
+            slot.user = self.user
+            slot.in_person = True
+            slot.save()
+        self._login()
+        self.client.post(reverse("toggle_role", args=[self.slot_a.id]))
+        self.slot_a.refresh_from_db()
+        self.slot_b.refresh_from_db()
+        self.assertIsNone(self.slot_a.user)
+        self.assertIsNone(self.slot_b.user)
+        self.assertIsNone(self.slot_b.in_person)
+
+    def test_editing_one_slot_syncs_the_other(self):
+        for slot in (self.slot_a, self.slot_b):
+            slot.user = self.user
+            slot.in_person = True
+            slot.notes = "old"
+            slot.save()
+        self._login()
+        self.client.post(
+            reverse("save_role_details", args=[self.slot_a.id]),
+            {"in_person": "false", "notes": "new"},
+        )
+        self.slot_b.refresh_from_db()
+        self.assertFalse(self.slot_b.in_person)
+        self.assertEqual(self.slot_b.notes, "new")
+
+    def test_holding_both_slots_does_not_block_via_per_meeting_limit(self):
+        # Claiming the first slot fills both; the member must not then be
+        # blocked from the second by the one-role-per-meeting limit.
+        self.slot_a.user = self.user
+        self.slot_a.save()
+        self._login()
+        response = self.client.post(
+            reverse("toggle_role", args=[self.slot_b.id]), {"in_person": "true"})
+        self.slot_b.refresh_from_db()
+        self.assertEqual(self.slot_b.user, self.user)
+        self.assertNotIn("already signed up", response.get("HX-Trigger", ""))
+
+    def test_other_role_still_blocked_by_per_meeting_limit(self):
+        # Holding the General Evaluator still blocks claiming a different role.
+        self.slot_a.user = self.user
+        self.slot_a.save()
+        timer = MeetingRole.objects.create(
+            meeting=self.meeting, role=Role.objects.create(name="Timer"),
+            sort_order=1)
+        self._login()
+        response = self.client.post(
+            reverse("toggle_role", args=[timer.id]), {"in_person": "true"})
+        timer.refresh_from_db()
+        self.assertIsNone(timer.user)
+        self.assertIn("already signed up", response["HX-Trigger"])
+
+
 class CheckinKioskViewTest(TestCase):
     def setUp(self):
         self.client = Client()

@@ -43,6 +43,13 @@ class Role(models.Model):
         help_text="Uncheck to keep this role off the published agenda "
         "(web page and Word download) and the sign-up page, e.g. President.",
     )
+    single_holder_all_slots = models.BooleanField(
+        default=False,
+        help_text="When True, one member fills every slot of this role in a "
+        "meeting at once: signing up for any slot claims the others, and "
+        "dropping or editing one updates them all (e.g. General Evaluator, "
+        "who appears at two points in the agenda).",
+    )
     guidance_document = models.FileField(
         upload_to="role_guides/",
         blank=True,
