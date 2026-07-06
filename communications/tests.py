@@ -206,7 +206,12 @@ class AnnouncementSendTest(TestCase):
         announcement.send()
         mock_send.assert_called_once()
         messages = mock_send.call_args[0][0]
-        self.assertEqual(len(messages), 3)
+        # "All Active Members" excludes guests: member + officer, not the guest.
+        self.assertEqual(len(messages), 2)
+        recipients = {addr for m in messages for addr in m.to}
+        self.assertEqual(
+            recipients, {"member@example.com", "officer@example.com"}
+        )
 
     @patch("communications.emails.send_messages")
     def test_send_to_officers(self, mock_send):
