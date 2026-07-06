@@ -142,7 +142,7 @@ def _announcement_recipients(announcement):
     elif announcement.audience == "guests":
         qs = User.objects.filter(is_guest=True, is_active=True)
     else:
-        qs = User.objects.filter(is_active=True)
+        qs = User.objects.filter(is_active=True, is_guest=False)
     return [
         {"email": u.email, "name": str(u),
          "context": {"first_name": u.first_name}}
