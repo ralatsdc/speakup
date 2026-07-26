@@ -215,8 +215,9 @@ class MeetingRole(models.Model):
         null=True,
         blank=True,
         default=None,
-        help_text="Whether the assigned member attends in person. "
-        "Null until a member signs up.",
+        help_text="Attendance mode for this slot. Seeded from the meeting "
+        "type's planned mode; a member may override it at sign-up. Null only "
+        "when the slot has no template default.",
     )
     exact_minutes = models.PositiveIntegerField(
         default=0,
@@ -449,6 +450,7 @@ def populate_meeting_from_type(sender, instance, created, raw=False, **kwargs):
                         session=item.session,
                         notes=item.default_note,
                         sort_order=item.order,
+                        in_person=item.in_person,
                     )
         except Exception:
             logger.exception("Failed to populate meeting %s from type", instance)

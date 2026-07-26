@@ -468,9 +468,10 @@ def _single_holder_siblings(assignment):
 
 
 def _clear_member_fields(slot):
-    """Reset every member-entered field so a slot reopens clean."""
+    """Reset every member-entered field so a slot reopens clean, restoring the
+    template's planned attendance mode (None when the template has no default)."""
     slot.user = None
-    slot.in_person = None
+    slot.in_person = _template_planned_mode(slot)
     slot.notes = ""
     slot.pathways_path = ""
     slot.pathways_level = None
@@ -512,21 +513,29 @@ def _apply_signup_fields(assignment, request):
         assignment.pathways_project = request.POST.get("pathways_project", "").strip()
 
 
-def _template_in_person(assignment):
-    """Default attendance mode for an assignment, read from its template.
+def _template_planned_mode(assignment):
+    """Planned attendance mode from the template, or None if none applies.
 
     Looks up ``MeetingTypeItem.in_person`` for this assignment's
-    (meeting_type, role). Falls back to True when the meeting has no
-    ``meeting_type`` or no matching template item.
+    (meeting_type, role). Returns None when the meeting has no ``meeting_type``
+    or no matching template item, so a reopened slot without a planned mode
+    stays unlabeled.
     """
     meeting_type_id = assignment.meeting.meeting_type_id
     if not meeting_type_id:
-        return True
+        return None
     mti = MeetingTypeItem.objects.filter(
         meeting_type_id=meeting_type_id,
         role=assignment.role,
     ).first()
-    return mti.in_person if mti else True
+    return mti.in_person if mti else None
+
+
+def _template_in_person(assignment):
+    """Default attendance mode for the sign-up dialog. Falls back to True
+    when the template offers no planned mode for this slot."""
+    mode = _template_planned_mode(assignment)
+    return True if mode is None else mode
 
 
 @login_required
@@ -537,15 +546,16 @@ def signup_role_form(request, role_id):
     officer."""
     assignment = get_object_or_404(MeetingRole, id=role_id)
     is_edit = assignment.user is not None
+    # Prefer the slot's own mode (seeded from the template at creation, or set
+    # by the member); fall back to the template default for legacy slots.
+    default_in_person = (
+        assignment.in_person
+        if assignment.in_person is not None
+        else _template_in_person(assignment)
+    )
     if is_edit:
-        default_in_person = (
-            assignment.in_person
-            if assignment.in_person is not None
-            else _template_in_person(assignment)
-        )
         form_action = reverse("save_role_details", args=[assignment.id])
     else:
-        default_in_person = _template_in_person(assignment)
         form_action = reverse("toggle_role", args=[assignment.id])
     return render(
         request,

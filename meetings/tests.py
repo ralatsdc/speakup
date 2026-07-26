@@ -51,14 +51,35 @@ class MeetingSignalTest(TestCase):
         self.assertEqual(meeting.roles.filter(role=self.role_speaker).count(), 3)
         self.assertEqual(meeting.roles.filter(role=self.role_timer).count(), 1)
 
-    def test_populated_roles_have_no_attendance_mode(self):
+    def test_populated_roles_inherit_template_mode(self):
+        # Items default to in_person=True, so generated slots are seeded True.
         meeting = Meeting.objects.create(
             meeting_type=self.meeting_type,
             date=timezone.now(),
         )
         self.assertTrue(
-            all(r.in_person is None for r in meeting.roles.all())
+            all(r.in_person is True for r in meeting.roles.all())
         )
+
+    def test_populated_roles_split_onsite_and_online(self):
+        # One "Timer" role, two template lines differing only by mode, generate
+        # one in-person and one remote open slot — without duplicating the Role.
+        timer_online = MeetingType.objects.create(name="Hybrid")
+        MeetingTypeItem.objects.create(
+            meeting_type=timer_online, role=self.role_timer,
+            count=1, order=1, in_person=True,
+        )
+        MeetingTypeItem.objects.create(
+            meeting_type=timer_online, role=self.role_timer,
+            count=1, order=2, in_person=False,
+        )
+        meeting = Meeting.objects.create(
+            meeting_type=timer_online, date=timezone.now(),
+        )
+        timer_modes = sorted(
+            r.in_person for r in meeting.roles.filter(role=self.role_timer)
+        )
+        self.assertEqual(timer_modes, [False, True])
 
     def test_no_roles_without_meeting_type(self):
         meeting = Meeting.objects.create(date=timezone.now())

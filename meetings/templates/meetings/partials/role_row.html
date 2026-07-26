@@ -33,6 +33,7 @@
                 {% if evaluated_by %}<div class="small text-muted">{{ evaluated_by }}</div>{% endif %}
             {% endwith %}
         {% else %}
+            {% if assignment.in_person is not None %}<span class="badge rounded-pill border {% if assignment.in_person %}border-success text-success{% else %}border-secondary text-secondary{% endif %} me-2">{{ assignment.attendance_label }}</span>{% endif %}
             {% if user.is_authenticated %}
                 <button class="btn btn-sm btn-primary"
                         data-bs-toggle="modal" data-bs-target="#signupModal"
