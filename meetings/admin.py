@@ -65,7 +65,10 @@ class SessionAdmin(admin.ModelAdmin):
 
 class MeetingTypeSessionInline(admin.TabularInline):
     model = MeetingTypeSession
-    extra = 1
+    # No blank extra row: its pre-filled defaults (e.g. order=0) make the
+    # form look "changed" if touched, then fail required-field validation on
+    # save. Add rows with "Add another" instead.
+    extra = 0
     formfield_overrides = {
         models.TextField: {"widget": forms.Textarea(attrs={"rows": 2, "cols": 30})},
     }
@@ -73,7 +76,10 @@ class MeetingTypeSessionInline(admin.TabularInline):
 
 class MeetingTypeItemInline(admin.TabularInline):
     model = MeetingTypeItem
-    extra = 1
+    # See MeetingTypeSessionInline: a blank extra row whose defaults
+    # (in_person=True, count=1, order=0) get toggled fails validation on save
+    # because role is required. Add rows with "Add another" instead.
+    extra = 0
     formfield_overrides = {
         models.TextField: {"widget": forms.Textarea(attrs={"rows": 2, "cols": 30})},
     }
