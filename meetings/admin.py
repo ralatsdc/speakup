@@ -88,6 +88,18 @@ class MeetingTypeItemInline(admin.TabularInline):
 class MeetingTypeAdmin(admin.ModelAdmin):
     inlines = [MeetingTypeSessionInline, MeetingTypeItemInline]
 
+    class Media:
+        # Drag-to-reorder the tabular session/item inlines. The `order`
+        # column is hidden by CSS; SortableJS + the JS rewrite each row's
+        # order input on drop. Degrades safely if the CDN fails to load.
+        css = {"all": ("meetings/admin/inline_drag_sort_tabular.css",)}
+        js = (
+            # SortableJS via CDN (Django Media supports absolute URLs),
+            # loaded before the script that depends on the `Sortable` global.
+            "https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js",
+            "meetings/admin/inline_drag_sort_tabular.js",
+        )
+
 
 class MeetingSessionInline(admin.TabularInline):
     model = MeetingSession

@@ -1,0 +1,55 @@
+/* Drag-to-reorder for the MeetingType tabular inlines (sessions + items).
+   The accompanying JS (inline_drag_sort_tabular.js) uses SortableJS to
+   reorder <tr> rows and rewrite each row's `order` input to match the new
+   visual order. */
+
+/* The tabular "original" column normally shows each row's object repr
+   (e.g. "Regular Meeting: Timer x1") in a block <p>. That's redundant with
+   the row's own session/role/count fields, and it pushes the injected
+   handle onto its own line above it. Hide the repr and let the handle own
+   the column; the hidden id input beside it is untouched. */
+.inline-group td.original p {
+    display: none;
+}
+.inline-group td.original {
+    text-align: center;
+    vertical-align: middle;
+    width: 1.5em;
+    white-space: nowrap;
+    padding-left: 0;
+    padding-right: 0;
+}
+
+/* Handle injected by the JS into each row's leading cell. It's the only
+   valid initiator for the Sortable drag (handle option). */
+.mtype-drag-handle {
+    display: inline-block;
+    cursor: grab;
+    color: #999;
+    margin-right: 0;
+    user-select: none;
+    font-size: 1.2em;
+    line-height: 1;
+    vertical-align: middle;
+}
+.mtype-drag-handle:hover {
+    color: #333;
+}
+.mtype-drag-handle:active,
+.mtype-drag-ghost .mtype-drag-handle {
+    cursor: grabbing;
+}
+
+/* SortableJS marks the dragged row's placeholder with the ghost class. */
+.mtype-drag-ghost {
+    opacity: 0.45;
+    background-color: #fffbe6;
+}
+
+/* Drag drives `order` — hide the numeric column (header + cells). The data
+   still round-trips through the hidden input since display:none only hides
+   it visually. */
+.inline-group th.column-order,
+.inline-group td.field-order {
+    display: none;
+}
