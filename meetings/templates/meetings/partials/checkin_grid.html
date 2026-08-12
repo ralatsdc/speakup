@@ -1,0 +1,15 @@
+{% comment %}
+The member grid, re-rendered whole by the poll in kiosk.html so that
+check-ins made from a phone show up here without anyone reloading.
+{% endcomment %}
+<div class="row g-2" id="member-grid">
+    {% for member in members %}
+        {% if member.id in checked_in_ids %}
+            {% include 'meetings/partials/checkin_button.html' with is_present=True %}
+        {% else %}
+            {% include 'meetings/partials/checkin_button.html' with is_present=False %}
+        {% endif %}
+    {% empty %}
+        <p class="text-muted m-0">No active members to show.</p>
+    {% endfor %}
+</div>

@@ -21,10 +21,24 @@ urlpatterns = [
     ),
     # Kiosk Routes
     path("kiosk/", views.checkin_kiosk, name="checkin_kiosk"),
+    # Polled by the kiosk page so check-ins made elsewhere show up here.
+    path("kiosk/grid/", views.checkin_grid, name="checkin_grid"),
+    # Check-in and undo are separate endpoints on purpose: tapping a name is
+    # idempotent, and removing a check-in takes a deliberate second gesture.
     path(
         "kiosk/<int:meeting_id>/member/<int:user_id>/",
         views.checkin_member,
         name="checkin_member",
     ),
+    path(
+        "kiosk/<int:meeting_id>/member/<int:user_id>/undo/",
+        views.undo_checkin_member,
+        name="undo_checkin_member",
+    ),
     path("kiosk/<int:meeting_id>/guest/", views.checkin_guest, name="checkin_guest"),
+    path(
+        "kiosk/<int:meeting_id>/guest/form/",
+        views.checkin_guest_form,
+        name="checkin_guest_form",
+    ),
 ]

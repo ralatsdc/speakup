@@ -460,9 +460,10 @@ class AttendanceAdmin(admin.ModelAdmin):
         "attendee_type",
         "guest_email",
         "thanked",
+        "source",
         "timestamp",
     )
-    list_filter = (("meeting", MeetingListFilter), AttendeeTypeListFilter)
+    list_filter = (("meeting", MeetingListFilter), AttendeeTypeListFilter, "source")
     list_select_related = ("meeting", "user")
     search_fields = (
         "guest_first_name",
