@@ -136,8 +136,20 @@ def total_recipients(groups):
 def _announcement_recipients(announcement):
     from django.contrib.auth import get_user_model
 
+    from .models import Announcement
+
     User = get_user_model()
-    if announcement.audience == "officers":
+    if announcement.audience == Announcement.AUDIENCE_SELECTED:
+        # Hand-picked. No is_guest filter: naming someone individually is the
+        # whole point, and "email these two visitors" is a real reason to use
+        # this. Ordered by name so the review page reads predictably.
+        qs = announcement.recipients.order_by("first_name", "last_name")
+        if not qs.exists():
+            raise ValueError(
+                "This announcement is addressed to “Selected Members” but no "
+                "members are selected."
+            )
+    elif announcement.audience == "officers":
         qs = User.objects.filter(is_officer=True, is_active=True)
     elif announcement.audience == "guests":
         qs = User.objects.filter(is_guest=True, is_active=True)
@@ -150,18 +162,45 @@ def _announcement_recipients(announcement):
     ]
 
 
-def build_announcement_draft(announcement, back_url=""):
-    recipients = _announcement_recipients(announcement)
-    return {
-        "workflow": "announcement",
-        "title": f"Send announcement: {announcement.subject}",
-        "back_url": back_url,
-        "groups": [{
-            "key": "all",
-            "label": f"{announcement.get_audience_display()} ({len(recipients)})",
+def announcement_group_key(announcement):
+    """Group key for an announcement's section of the review form.
+
+    Keyed per announcement rather than a fixed string so several can be
+    reviewed on one page — the bulk admin action sends whatever is ticked in
+    the changelist — and each still carries its own editable subject/body.
+    """
+    return f"ann{announcement.id}"
+
+
+def build_announcement_draft(announcements, back_url=""):
+    """Build a review draft for one or more announcements (one group each)."""
+    if not isinstance(announcements, (list, tuple)):
+        announcements = [announcements]
+
+    multiple = len(announcements) > 1
+    groups = []
+    for announcement in announcements:
+        recipients = _announcement_recipients(announcement)
+        audience = f"{announcement.get_audience_display()} ({len(recipients)})"
+        groups.append({
+            "key": announcement_group_key(announcement),
+            # With several on the page the audience alone doesn't say which
+            # announcement a section belongs to, so lead with the subject.
+            "label": f"{announcement.subject} — {audience}" if multiple else audience,
             "subject": announcement.subject,
             "body": announcement.body,
             "placeholders": ["first_name"],
             "recipients": recipients,
-        }],
+        })
+
+    title = (
+        f"Send {len(announcements)} announcements"
+        if multiple
+        else f"Send announcement: {announcements[0].subject}"
+    )
+    return {
+        "workflow": "announcement",
+        "title": title,
+        "back_url": back_url,
+        "groups": groups,
     }

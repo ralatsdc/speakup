@@ -67,19 +67,39 @@ def _resolve_handler(workflow, request):
         from django.utils import timezone
         from .models import Announcement
         from .emails import build_announcement_draft
-        from .utils import send_announcement
+        from .utils import send_announcements
 
-        ann = get_object_or_404(Announcement, pk=p.get("announcement"))
+        # One id from the change-form button, or several from the changelist's
+        # bulk action. Same round-trip shape as the invite workflow: repeated
+        # ``announcement=1&announcement=2`` in, comma-joined back out through
+        # the review form's single hidden field.
+        raw = p.getlist("announcement") or (p.get("announcements") or "").split(",")
+        ann_ids = []
+        for x in raw:
+            if x.isdigit() and int(x) not in ann_ids:
+                ann_ids.append(int(x))
+        if not ann_ids:
+            raise Http404("No announcements selected")
+        anns = [get_object_or_404(Announcement, pk=aid) for aid in ann_ids]
 
         def send(edits):
-            count = send_announcement(ann, edits)
-            ann.sent_at = timezone.now()
-            ann.save(update_fields=["sent_at"])
-            return f"Sent '{ann.subject}' to {count} recipient{'s' if count != 1 else ''}."
-        return {"params": {"workflow": workflow, "announcement": ann.id},
-                "default_back": reverse("admin:communications_announcement_change",
-                                        args=[ann.id]),
-                "build": lambda: build_announcement_draft(ann), "send": send}
+            count = send_announcements(anns, edits)
+            now = timezone.now()
+            for a in anns:
+                a.sent_at = now
+                a.save(update_fields=["sent_at"])
+            plural = "s" if count != 1 else ""
+            if len(anns) == 1:
+                return f"Sent '{anns[0].subject}' to {count} recipient{plural}."
+            return f"Sent {len(anns)} announcements to {count} recipient{plural}."
+
+        back = (reverse("admin:communications_announcement_change", args=[anns[0].id])
+                if len(anns) == 1
+                else reverse("admin:communications_announcement_changelist"))
+        return {"params": {"workflow": workflow,
+                           "announcements": ",".join(str(a.id) for a in anns)},
+                "default_back": back,
+                "build": lambda: build_announcement_draft(anns), "send": send}
 
     if workflow == "invite":
         from members.models import User

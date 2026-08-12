@@ -1,13 +1,16 @@
+from django.conf import settings
 from django.db import models
 
 from .utils import send_announcement
 
 
 class Announcement(models.Model):
+    AUDIENCE_SELECTED = "selected"
     AUDIENCE_CHOICES = [
         ("all", "All Active Members"),
         ("officers", "Officers Only"),
         ("guests", "Guests Only"),
+        (AUDIENCE_SELECTED, "Selected Members"),
     ]
 
     subject = models.CharField(max_length=200)
@@ -16,6 +19,17 @@ class Announcement(models.Model):
         "(**bold**, *italic*, [links](https://…), - lists) along with emojis "
         "and the {first_name} placeholder.")
     audience = models.CharField(max_length=20, choices=AUDIENCE_CHOICES, default="all")
+    # Only consulted when audience is "selected" — the audiences are
+    # alternatives, not a group plus extras. Picking a predefined audience and
+    # also naming people would silently drop the names, so the admin form
+    # rejects that combination rather than guessing.
+    recipients = models.ManyToManyField(
+        settings.AUTH_USER_MODEL,
+        blank=True,
+        related_name="announcements",
+        help_text="Used only when the audience is “Selected Members”. Unlike "
+        "the predefined audiences, guests can be picked here.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     sent_at = models.DateTimeField(null=True, blank=True)
 
