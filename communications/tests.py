@@ -114,12 +114,58 @@ class EmailReviewTest(TestCase):
         ann = Announcement.objects.create(subject="Hi", body="Body", audience="all")
         resp = self.client.post(self.url, {
             "workflow": "announcement", "announcement": ann.id,
-            "subject_all": "Edited subject", "body_all": "Edited body",
+            f"subject_ann{ann.id}": "Edited subject",
+            f"body_ann{ann.id}": "Edited body",
         })
         self.assertEqual(resp.status_code, 302)
         ann.refresh_from_db()
         self.assertIsNotNone(ann.sent_at)
         self.assertTrue(any(msg.subject == "Edited subject" for msg in mail.outbox))
+
+    def test_announcement_review_handles_several_at_once(self):
+        """The changelist's bulk action sends whatever is ticked, so the review
+        page has to show each one with its own editable subject and body."""
+        User.objects.create_user("carol", "carol@example.com", "pw", first_name="Carol")
+        first = Announcement.objects.create(
+            subject="First", body="One", audience="all")
+        second = Announcement.objects.create(
+            subject="Second", body="Two", audience="all")
+
+        resp = self.client.get(self.url, {
+            "workflow": "announcement", "announcement": [first.id, second.id]})
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "Send 2 announcements")
+        # Labels lead with the subject so the sections are tellable apart.
+        self.assertContains(resp, "First —")
+        self.assertContains(resp, "Second —")
+        self.assertEqual(len(resp.context["draft"]["groups"]), 2)
+
+    def test_announcement_review_sends_and_stamps_each(self):
+        User.objects.create_user("dave", "dave@example.com", "pw", first_name="Dave")
+        first = Announcement.objects.create(
+            subject="First", body="One", audience="all")
+        second = Announcement.objects.create(
+            subject="Second", body="Two", audience="all")
+
+        resp = self.client.post(self.url, {
+            "workflow": "announcement",
+            "announcements": f"{first.id},{second.id}",
+            f"subject_ann{first.id}": "Edited first",
+            f"body_ann{first.id}": "One",
+            f"subject_ann{second.id}": "Second",
+            f"body_ann{second.id}": "Two",
+        })
+
+        self.assertEqual(resp.status_code, 302)
+        first.refresh_from_db()
+        second.refresh_from_db()
+        self.assertIsNotNone(first.sent_at)
+        self.assertIsNotNone(second.sent_at)
+        subjects = {m.subject for m in mail.outbox}
+        # Each announcement keeps its own subject; the edit hits only its group.
+        self.assertIn("Edited first", subjects)
+        self.assertIn("Second", subjects)
 
     def test_announcement_to_selected_members_lists_them_for_review(self):
         alice = User.objects.create_user(
@@ -320,6 +366,45 @@ class AnnouncementSendTest(TestCase):
         messages = mock_send.call_args[0][0]
         self.assertEqual(len(messages), 1)
         self.assertEqual(messages[0].to, ["member@example.com"])
+
+
+class AnnouncementAdminActionTest(TestCase):
+    """The changelist action used to be the one send path with no preview of
+    who the email was going to. It now routes through the review page."""
+
+    def setUp(self):
+        self.staff = User.objects.create_superuser("boss", "boss@example.com", "pw")
+        self.client.force_login(self.staff)
+        self.url = reverse("admin:communications_announcement_changelist")
+
+    def test_action_redirects_to_review_without_sending(self):
+        ann = Announcement.objects.create(subject="Hi", body="Body", audience="all")
+
+        resp = self.client.post(self.url, {
+            "action": "send_announcement",
+            "_selected_action": [str(ann.id)],
+        })
+
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn(reverse("email_review"), resp["Location"])
+        self.assertIn(f"announcement={ann.id}", resp["Location"])
+        self.assertFalse(mail.outbox)
+        ann.refresh_from_db()
+        self.assertIsNone(ann.sent_at)
+
+    def test_action_carries_every_selected_announcement(self):
+        first = Announcement.objects.create(subject="A", body="a", audience="all")
+        second = Announcement.objects.create(subject="B", body="b", audience="all")
+
+        resp = self.client.post(self.url, {
+            "action": "send_announcement",
+            "_selected_action": [str(first.id), str(second.id)],
+        })
+
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn(f"announcement={first.id}", resp["Location"])
+        self.assertIn(f"announcement={second.id}", resp["Location"])
+        self.assertFalse(mail.outbox)
 
 
 class AnnouncementAdminFormTest(TestCase):
