@@ -136,8 +136,20 @@ def total_recipients(groups):
 def _announcement_recipients(announcement):
     from django.contrib.auth import get_user_model
 
+    from .models import Announcement
+
     User = get_user_model()
-    if announcement.audience == "officers":
+    if announcement.audience == Announcement.AUDIENCE_SELECTED:
+        # Hand-picked. No is_guest filter: naming someone individually is the
+        # whole point, and "email these two visitors" is a real reason to use
+        # this. Ordered by name so the review page reads predictably.
+        qs = announcement.recipients.order_by("first_name", "last_name")
+        if not qs.exists():
+            raise ValueError(
+                "This announcement is addressed to “Selected Members” but no "
+                "members are selected."
+            )
+    elif announcement.audience == "officers":
         qs = User.objects.filter(is_officer=True, is_active=True)
     elif announcement.audience == "guests":
         qs = User.objects.filter(is_guest=True, is_active=True)

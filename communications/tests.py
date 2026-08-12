@@ -121,6 +121,30 @@ class EmailReviewTest(TestCase):
         self.assertIsNotNone(ann.sent_at)
         self.assertTrue(any(msg.subject == "Edited subject" for msg in mail.outbox))
 
+    def test_announcement_to_selected_members_lists_them_for_review(self):
+        alice = User.objects.create_user(
+            "alice2", "alice2@example.com", "pw", first_name="Alice")
+        User.objects.create_user("bob2", "bob2@example.com", "pw", first_name="Bob")
+        ann = Announcement.objects.create(
+            subject="Hi", body="Body", audience=Announcement.AUDIENCE_SELECTED)
+        ann.recipients.set([alice])
+
+        resp = self.client.get(
+            self.url, {"workflow": "announcement", "announcement": ann.id})
+
+        self.assertEqual(resp.status_code, 200)
+        # The count is the officer's check that they picked the right people.
+        self.assertContains(resp, "Selected Members (1)")
+        self.assertEqual(resp.context["total"], 1)
+
+    def test_announcement_with_nobody_selected_shows_an_error_not_a_500(self):
+        ann = Announcement.objects.create(
+            subject="Oops", body="Body", audience=Announcement.AUDIENCE_SELECTED)
+        resp = self.client.get(
+            self.url, {"workflow": "announcement", "announcement": ann.id})
+        self.assertEqual(resp.status_code, 302)
+        self.assertFalse(mail.outbox)
+
     # --- invite ---
 
     def test_invite_post_sends(self):
@@ -232,6 +256,108 @@ class AnnouncementSendTest(TestCase):
         messages = mock_send.call_args[0][0]
         self.assertEqual(len(messages), 1)
         self.assertEqual(messages[0].to, ["guest@example.com"])
+
+    @patch("communications.emails.send_messages")
+    def test_send_to_selected_members_only(self, mock_send):
+        announcement = Announcement.objects.create(
+            subject="Just you two", body="Test",
+            audience=Announcement.AUDIENCE_SELECTED,
+        )
+        announcement.recipients.set([self.member, self.officer])
+        announcement.send()
+        messages = mock_send.call_args[0][0]
+        self.assertEqual(len(messages), 2)
+        recipients = {addr for m in messages for addr in m.to}
+        self.assertEqual(
+            recipients, {"member@example.com", "officer@example.com"}
+        )
+
+    @patch("communications.emails.send_messages")
+    def test_selected_members_can_include_guests(self, mock_send):
+        """Naming someone individually overrides the guest exclusion that the
+        predefined 'all' audience applies."""
+        announcement = Announcement.objects.create(
+            subject="Nice to meet you", body="Test",
+            audience=Announcement.AUDIENCE_SELECTED,
+        )
+        announcement.recipients.set([self.guest])
+        announcement.send()
+        messages = mock_send.call_args[0][0]
+        self.assertEqual(messages[0].to, ["guest@example.com"])
+
+    @patch("communications.emails.send_messages")
+    def test_selected_recipients_are_ignored_for_predefined_audiences(self, mock_send):
+        """The audiences are alternatives. A stray selection left on an
+        announcement addressed to a group must not widen it."""
+        announcement = Announcement.objects.create(
+            subject="Officers only", body="Test", audience="officers"
+        )
+        announcement.recipients.set([self.guest])
+        announcement.send()
+        messages = mock_send.call_args[0][0]
+        self.assertEqual(len(messages), 1)
+        self.assertEqual(messages[0].to, ["officer@example.com"])
+
+    @patch("communications.emails.send_messages")
+    def test_selected_audience_with_nobody_picked_refuses_to_send(self, mock_send):
+        announcement = Announcement.objects.create(
+            subject="Oops", body="Test",
+            audience=Announcement.AUDIENCE_SELECTED,
+        )
+        with self.assertRaises(ValueError):
+            announcement.send()
+        mock_send.assert_not_called()
+
+    @patch("communications.emails.send_messages")
+    def test_selected_recipient_without_an_email_is_skipped(self, mock_send):
+        no_email = User.objects.create_user(username="noemail", password="pass")
+        announcement = Announcement.objects.create(
+            subject="Hi", body="Test",
+            audience=Announcement.AUDIENCE_SELECTED,
+        )
+        announcement.recipients.set([self.member, no_email])
+        announcement.send()
+        messages = mock_send.call_args[0][0]
+        self.assertEqual(len(messages), 1)
+        self.assertEqual(messages[0].to, ["member@example.com"])
+
+
+class AnnouncementAdminFormTest(TestCase):
+    """Audience and hand-picked recipients are alternatives, so the admin form
+    rejects each half-configured combination rather than resolving it quietly."""
+
+    def setUp(self):
+        self.member = User.objects.create_user(
+            username="member", password="pass", email="member@example.com"
+        )
+
+    def _form(self, **overrides):
+        from communications.forms import AnnouncementAdminForm
+
+        data = {"subject": "Hi", "body": "Test", "audience": "all", "recipients": []}
+        data.update(overrides)
+        return AnnouncementAdminForm(data=data)
+
+    def test_selected_audience_requires_recipients(self):
+        form = self._form(audience=Announcement.AUDIENCE_SELECTED, recipients=[])
+        self.assertFalse(form.is_valid())
+        self.assertIn("recipients", form.errors)
+
+    def test_selected_audience_with_recipients_is_valid(self):
+        form = self._form(
+            audience=Announcement.AUDIENCE_SELECTED, recipients=[self.member.id]
+        )
+        self.assertTrue(form.is_valid(), form.errors)
+
+    def test_recipients_on_a_predefined_audience_is_rejected(self):
+        """Silently dropping the names an officer just picked is worse than
+        telling them the combination doesn't mean anything."""
+        form = self._form(audience="all", recipients=[self.member.id])
+        self.assertFalse(form.is_valid())
+        self.assertIn("recipients", form.errors)
+
+    def test_predefined_audience_without_recipients_is_valid(self):
+        self.assertTrue(self._form().is_valid())
 
 
 class MarkdownRenderingTest(TestCase):

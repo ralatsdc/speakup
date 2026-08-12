@@ -5,20 +5,55 @@ from django.http import HttpResponseRedirect
 from django.urls import reverse
 from django.utils import timezone
 
+from .forms import AnnouncementAdminForm
 from .models import Announcement
 
 
 @admin.register(Announcement)
 class AnnouncementAdmin(admin.ModelAdmin):
-    list_display = ("subject", "audience", "created_at", "sent_at")
+    form = AnnouncementAdminForm
+    list_display = ("subject", "audience", "recipient_summary", "created_at", "sent_at")
     readonly_fields = ("sent_at",)
+    # A dual list box rather than autocomplete: at club size the useful action
+    # is scanning the roster and ticking people off, not recalling exact names.
+    filter_horizontal = ("recipients",)
     actions = ["send_announcement"]
     change_form_template = "communications/admin/announcement_change_form.html"
+
+    def formfield_for_manytomany(self, db_field, request, **kwargs):
+        """Only offer active members, so nobody addresses an announcement to
+        someone who has left the club."""
+        if db_field.name == "recipients":
+            kwargs["queryset"] = (
+                db_field.remote_field.model.objects.filter(is_active=True)
+                .exclude(username="admin")
+                .order_by("first_name", "last_name")
+            )
+        return super().formfield_for_manytomany(db_field, request, **kwargs)
+
+    @admin.display(description="Recipients")
+    def recipient_summary(self, obj):
+        """Names for a hand-picked announcement; the audience covers the rest."""
+        if obj.audience != Announcement.AUDIENCE_SELECTED:
+            return "—"
+        names = [str(u) for u in obj.recipients.all()[:4]]
+        extra = obj.recipients.count() - len(names)
+        return ", ".join(names) + (f" +{extra} more" if extra > 0 else "")
 
     @admin.action(description="Send selected announcements via Email")
     def send_announcement(self, request, queryset):
         for announcement in queryset:
-            count = announcement.send()
+            # This action dispatches immediately, with no review page in
+            # between, so a misconfigured announcement has to fail loudly here.
+            try:
+                count = announcement.send()
+            except ValueError as e:
+                self.message_user(
+                    request,
+                    f"Did not send '{announcement.subject}': {e}",
+                    messages.ERROR,
+                )
+                continue
             announcement.sent_at = timezone.now()
             announcement.save()
             self.message_user(
