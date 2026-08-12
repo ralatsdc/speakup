@@ -22,6 +22,28 @@
 </div>
 
 {% if meeting %}
+{% comment %}
+Connection problems used to fail silently, which is most of what "the kiosk
+needs a refresh" turned out to mean. This banner is deliberately sticky.
+{% endcomment %}
+<div id="kiosk-error" class="alert alert-danger d-none sticky-top" role="alert">
+    <strong>Check-in didn't save.</strong>
+    <span id="kiosk-error-detail">Tap the name again.</span>
+</div>
+
+{% comment %}
+Confirmation toasts, centred above the grid rather than in a screen corner:
+on a kiosk nobody is looking at the bottom-right of the display.
+{% endcomment %}
+<div id="kiosk-toast" class="alert alert-success text-center d-none" role="status"></div>
+
+{% if not kiosk_open %}
+    <div class="alert alert-secondary text-center">
+        Check-in isn't open for this meeting yet. It opens a few hours before
+        the meeting starts.
+    </div>
+{% endif %}
+
 <div class="row">
     <!-- LEFT: Member Quick Check-in -->
     <div class="col-md-8">
@@ -30,15 +52,23 @@
                 <h3 class="h5 m-0">Member Check-In</h3>
             </div>
             <div class="card-body">
-                <div class="row g-2">
-                    {% for member in members %}
-                        {# We check the condition here, then pass the result to the include #}
-                        {% if member.id in checked_in_ids %}
-                            {% include 'meetings/partials/checkin_button.html' with is_present=True %}
-                        {% else %}
-                            {% include 'meetings/partials/checkin_button.html' with is_present=False %}
-                        {% endif %}
-                    {% endfor %}
+                {# Outside the polled container, so typing isn't wiped by a swap. #}
+                <input type="search" id="member-filter" class="form-control form-control-lg mb-3"
+                       placeholder="Start typing your name…" autocomplete="off"
+                       aria-label="Filter the member list by name">
+
+                {% comment %}
+                Re-fetches itself so check-ins made from a phone appear here.
+                The meeting id goes along so the server can tell us to do a
+                full reload if the day has rolled over under an open tab.
+                {% endcomment %}
+                <div id="member-grid-container"
+                     hx-get="{% url 'checkin_grid' %}?meeting={{ meeting.id }}"
+                     hx-trigger="every 15s, kiosk-refresh from:body"
+                     hx-target="this"
+                     hx-swap="innerHTML"
+                     hx-sync="this:drop">
+                    {% include 'meetings/partials/checkin_grid.html' %}
                 </div>
             </div>
         </div>
@@ -52,28 +82,79 @@
             </div>
             <div class="card-body">
                 <div id="guest-form-container">
-                    <form hx-post="{% url 'checkin_guest' meeting.id %}" 
-                          hx-target="#guest-form-container" 
-                          hx-swap="innerHTML">
-                        {% csrf_token %}
-                        <div class="mb-3">
-                            <label class="form-label">First Name</label>
-                            <input type="text" name="guest_first_name" class="form-control form-control-lg" required>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Last Name</label>
-                            <input type="text" name="guest_last_name" class="form-control form-control-lg" required>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Email Address</label>
-                            <input type="email" name="guest_email" class="form-control form-control-lg" required>
-                        </div>
-                        <button type="submit" class="btn btn-success w-100 btn-lg">I'm here!</button>
-                    </form>
+                    {% include 'meetings/partials/guest_form.html' %}
                 </div>
             </div>
         </div>
     </div>
 </div>
+
+<script>
+(function () {
+    var errorBox = document.getElementById("kiosk-error");
+    var errorDetail = document.getElementById("kiosk-error-detail");
+    var toastBox = document.getElementById("kiosk-toast");
+    var filter = document.getElementById("member-filter");
+    var toastTimer = null;
+
+    function showError(message) {
+        errorDetail.textContent = message;
+        errorBox.classList.remove("d-none");
+    }
+    function clearError() {
+        errorBox.classList.add("d-none");
+    }
+
+    // A failed request used to change nothing at all on screen. Say so.
+    document.body.addEventListener("htmx:sendError", function () {
+        showError("No connection to the server. Tap the name again.");
+    });
+    document.body.addEventListener("htmx:timeout", function () {
+        showError("The server took too long to answer. Tap the name again.");
+    });
+    document.body.addEventListener("htmx:responseError", function (evt) {
+        if (evt.detail.xhr.status === 403) {
+            showError("This kiosk link has expired. Scan the QR code again.");
+        } else {
+            showError("Tap the name again.");
+        }
+    });
+    document.body.addEventListener("htmx:afterRequest", function (evt) {
+        if (evt.detail.successful) { clearError(); }
+    });
+
+    // Confirmation toast, fired by HX-Trigger on check-in and undo.
+    document.body.addEventListener("kioskToast", function (evt) {
+        toastBox.textContent = evt.detail.value;
+        toastBox.classList.remove("d-none");
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(function () {
+            toastBox.classList.add("d-none");
+        }, 4000);
+    });
+
+    // Name filter. Reapplied after every poll swap, since the grid the filter
+    // was hiding tiles in has just been replaced wholesale.
+    function applyFilter() {
+        var term = (filter.value || "").trim().toLowerCase();
+        document.querySelectorAll("#member-grid [data-member-name]").forEach(function (tile) {
+            var name = (tile.dataset.memberName || "").toLowerCase();
+            tile.classList.toggle("d-none", term !== "" && name.indexOf(term) === -1);
+        });
+    }
+    filter.addEventListener("input", applyFilter);
+    // Both events: htmx finalises swapped-in nodes during the settle phase,
+    // so filtering only on afterSwap gets undone and the grid springs back.
+    document.body.addEventListener("htmx:afterSwap", applyFilter);
+    document.body.addEventListener("htmx:afterSettle", applyFilter);
+
+    // A kiosk display that has been asleep or backgrounded comes back stale.
+    document.addEventListener("visibilitychange", function () {
+        if (!document.hidden) {
+            document.body.dispatchEvent(new Event("kiosk-refresh"));
+        }
+    });
+})();
+</script>
 {% endif %}
 {% endblock %}

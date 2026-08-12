@@ -1,6 +1,7 @@
 import base64
 import io
 import json
+import secrets
 from datetime import timedelta
 from pathlib import Path
 
@@ -9,7 +10,11 @@ import qrcode.constants
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required, user_passes_test
+from django.core.cache import cache
+from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
+from django.core.validators import validate_email
+from django.db import IntegrityError
 from django.http import HttpResponse, HttpResponseForbidden
 from django.shortcuts import get_object_or_404, render
 from django.template.loader import render_to_string
@@ -663,97 +668,326 @@ def save_role_details(request, role_id):
     )
 
 
-def checkin_kiosk(request):
-    """Displays the check-in grid for today's meeting (or the next upcoming one)."""
+# --- Check-in kiosk --------------------------------------------------------
+#
+# The kiosk deliberately takes no login: members tap their name as they walk
+# in, and a queue at the door is a worse problem than a scrambled roster.
+# Three cheaper controls stand in for authentication:
+#
+#   * a per-meeting token, carried in the QR URL and stashed in the session,
+#     so /kiosk/ is not simply open to anyone who guesses it;
+#   * a window around the meeting time, outside which nothing is writable;
+#   * idempotent check-in, so the worst a stray request can do is add a row
+#     rather than silently delete someone's attendance.
+#
+# Officers reach the kiosk through the nav bar with no token at all.
+
+KIOSK_OPENS_BEFORE = timedelta(hours=4)
+KIOSK_CLOSES_AFTER = timedelta(hours=6)
+
+KIOSK_TOKEN_PARAM = "k"
+KIOSK_SESSION_KEY = "kiosk_token"
+
+# A brake on the one anonymous endpoint that writes an arbitrary email address
+# into the database. Everyone at the venue shares an IP (and every guest using
+# the physical kiosk shares that device's IP), so this has to clear a whole
+# meeting's worth of legitimate walk-ins by a wide margin.
+GUEST_SIGNIN_MAX_PER_HOUR = 30
+
+
+def _resolve_kiosk_meeting():
+    """Today's meeting, else the next upcoming one.
+
+    Re-resolved on every request rather than trusting an id baked into the
+    page, so a tab left open overnight stops writing to a stale meeting.
+    """
     today = timezone.localdate()
-    meeting = Meeting.objects.filter(date__date=today).first()
-
-    if not meeting:
-        meeting = Meeting.objects.filter(date__gte=today).order_by("date").first()
-
-    context = {"meeting": meeting}
-
-    if meeting:
-        members = list(
-            User.objects.filter(is_active=True)
-            .exclude(username="admin")
-            .order_by("first_name")
-        )
-        checked_in_ids = set(meeting.attendances.values_list("user_id", flat=True))
-
-        # Map each member to their role's attendance mode for this meeting.
-        # If a member holds multiple roles, the first non-null mode wins.
-        mode_by_user = {}
-        for uid, in_person in meeting.roles.filter(
-            user__isnull=False
-        ).values_list("user_id", "in_person"):
-            if mode_by_user.get(uid) is None:
-                mode_by_user[uid] = in_person
-        for member in members:
-            member.attendance_mode = mode_by_user.get(member.id)
-
-        kiosk_url = f"{settings.SITE_URL}{reverse('checkin_kiosk')}"
-        qr_data_uri = _generate_qr_data_uri(kiosk_url)
-        agenda_url = reverse("meeting_agenda", args=[meeting.id])
-
-        context.update(
-            {
-                "members": members,
-                "checked_in_ids": checked_in_ids,
-                "qr_data_uri": qr_data_uri,
-                "agenda_url": agenda_url,
-            }
-        )
-
-    return render(request, "meetings/kiosk.html", context)
+    return (
+        Meeting.objects.filter(date__date=today).order_by("date").first()
+        or Meeting.objects.filter(date__gte=today).order_by("date").first()
+    )
 
 
-@require_POST
-def checkin_member(request, meeting_id, user_id):
-    """HTMX endpoint: toggle attendance for a member (check in / undo)."""
-    meeting = get_object_or_404(Meeting, id=meeting_id)
-    user = get_object_or_404(User, id=user_id)
+def _kiosk_is_open(meeting, now=None):
+    """Whether check-in writes are accepted for this meeting right now."""
+    now = now or timezone.now()
+    return (
+        meeting.date - KIOSK_OPENS_BEFORE <= now <= meeting.date + KIOSK_CLOSES_AFTER
+    )
 
-    attendance = Attendance.objects.filter(meeting=meeting, user=user).first()
 
-    is_present = False
-    if attendance:
-        attendance.delete()
-    else:
-        Attendance.objects.create(meeting=meeting, user=user)
-        is_present = True
+def _kiosk_authorized(request, meeting):
+    """Officers are always allowed; everyone else needs this meeting's token."""
+    user = request.user
+    if user.is_authenticated and (user.is_officer or user.is_superuser):
+        return True
+    session_token = request.session.get(KIOSK_SESSION_KEY) or ""
+    return bool(meeting.kiosk_token) and secrets.compare_digest(
+        session_token, meeting.kiosk_token
+    )
 
+
+def _attendance_mode_for(meeting, user):
+    """The member's in-person/remote mode from their role, if they hold one."""
     role = (
         meeting.roles.filter(user=user, in_person__isnull=False)
         .order_by("sort_order")
         .first()
     )
-    user.attendance_mode = role.in_person if role else None
+    return role.in_person if role else None
+
+
+def _kiosk_members(meeting):
+    """Members for the check-in grid, plus the set of those already present."""
+    members = list(
+        User.objects.filter(is_active=True)
+        .exclude(username="admin")
+        .order_by("first_name", "last_name")
+    )
+    checked_in_ids = set(
+        meeting.attendances.filter(user__isnull=False).values_list("user_id", flat=True)
+    )
+
+    # Map each member to their role's attendance mode for this meeting.
+    # If a member holds multiple roles, the first non-null mode wins.
+    mode_by_user = {}
+    for uid, in_person in (
+        meeting.roles.filter(user__isnull=False)
+        .order_by("sort_order")
+        .values_list("user_id", "in_person")
+    ):
+        if mode_by_user.get(uid) is None:
+            mode_by_user[uid] = in_person
+    for member in members:
+        member.attendance_mode = mode_by_user.get(member.id)
+
+    return members, checked_in_ids
+
+
+def checkin_kiosk(request):
+    """Displays the check-in grid for today's meeting (or the next upcoming one)."""
+    meeting = _resolve_kiosk_meeting()
+    if not meeting:
+        return render(request, "meetings/kiosk.html", {"meeting": None})
+
+    # A QR scan arrives with the token in the URL. Stash it in the session so
+    # the check-in requests that follow don't each have to carry it.
+    token = request.GET.get(KIOSK_TOKEN_PARAM)
+    if token and secrets.compare_digest(token, meeting.kiosk_token):
+        request.session[KIOSK_SESSION_KEY] = token
+
+    if not _kiosk_authorized(request, meeting):
+        return render(request, "meetings/kiosk_denied.html", status=403)
+
+    members, checked_in_ids = _kiosk_members(meeting)
+    kiosk_url = (
+        f"{settings.SITE_URL}{reverse('checkin_kiosk')}"
+        f"?{KIOSK_TOKEN_PARAM}={meeting.kiosk_token}"
+    )
 
     return render(
         request,
-        "meetings/partials/checkin_button.html",
-        {"meeting": meeting, "member": user, "is_present": is_present},
+        "meetings/kiosk.html",
+        {
+            "meeting": meeting,
+            "members": members,
+            "checked_in_ids": checked_in_ids,
+            "qr_data_uri": _generate_qr_data_uri(kiosk_url),
+            "agenda_url": reverse("meeting_agenda", args=[meeting.id]),
+            "kiosk_open": _kiosk_is_open(meeting),
+        },
     )
 
 
+def checkin_grid(request):
+    """HTMX poll target: re-renders the member grid.
+
+    Without this the page only ever learns about check-ins it performed
+    itself, so a member who checked in from their phone still shows as absent
+    on the kiosk.
+    """
+    meeting = _resolve_kiosk_meeting()
+    rendered_id = request.GET.get("meeting")
+
+    # The page compiled a meeting id into every button. If the day has rolled
+    # over under a tab left open, no partial swap can fix that — reload.
+    if not meeting or (rendered_id and str(meeting.id) != rendered_id):
+        response = HttpResponse(status=204)
+        response["HX-Refresh"] = "true"
+        return response
+
+    if not _kiosk_authorized(request, meeting):
+        return HttpResponseForbidden("This kiosk link is no longer valid.")
+
+    members, checked_in_ids = _kiosk_members(meeting)
+    return render(
+        request,
+        "meetings/partials/checkin_grid.html",
+        {
+            "meeting": meeting,
+            "members": members,
+            "checked_in_ids": checked_in_ids,
+            "kiosk_open": _kiosk_is_open(meeting),
+        },
+    )
+
+
+def _kiosk_write_guard(request, meeting_id):
+    """Shared gate for kiosk writes. Returns (meeting, None) or (None, response)."""
+    meeting = get_object_or_404(Meeting, id=meeting_id)
+    if not _kiosk_authorized(request, meeting):
+        return None, HttpResponseForbidden("This kiosk link is no longer valid.")
+    if not _kiosk_is_open(meeting):
+        return None, HttpResponseForbidden("Check-in is closed for this meeting.")
+    return meeting, None
+
+
+def _checkin_button_response(request, meeting, member, is_present, toast):
+    """Re-render one member's button and fire a confirmation toast."""
+    member.attendance_mode = _attendance_mode_for(meeting, member)
+    response = render(
+        request,
+        "meetings/partials/checkin_button.html",
+        {
+            "meeting": meeting,
+            "member": member,
+            "is_present": is_present,
+            "kiosk_open": True,
+        },
+    )
+    response["HX-Trigger"] = json.dumps({"kioskToast": toast})
+    return response
+
+
+@require_POST
+def checkin_member(request, meeting_id, user_id):
+    """HTMX endpoint: check a member in.
+
+    Idempotent by design. Tapping a name that is already checked in does
+    nothing, so a mis-tap can never silently remove someone else's
+    attendance, and a double-tap on a touchscreen is harmless. Undoing is a
+    separate, deliberate action — see undo_checkin_member.
+    """
+    meeting, denied = _kiosk_write_guard(request, meeting_id)
+    if denied:
+        return denied
+    user = get_object_or_404(User, id=user_id)
+
+    try:
+        Attendance.objects.get_or_create(
+            meeting=meeting,
+            user=user,
+            defaults={"source": Attendance.SOURCE_KIOSK},
+        )
+    except IntegrityError:
+        # Two devices checked the same member in at once; the row exists
+        # either way, which is all this endpoint promises.
+        pass
+
+    return _checkin_button_response(
+        request, meeting, user, True, f"Checked in: {user.first_name} {user.last_name}"
+    )
+
+
+@require_POST
+def undo_checkin_member(request, meeting_id, user_id):
+    """HTMX endpoint: remove a member's check-in.
+
+    Split out from checkin_member so that removing attendance always takes a
+    deliberate second gesture rather than being the other half of a toggle.
+    """
+    meeting, denied = _kiosk_write_guard(request, meeting_id)
+    if denied:
+        return denied
+    user = get_object_or_404(User, id=user_id)
+
+    Attendance.objects.filter(meeting=meeting, user=user).delete()
+
+    return _checkin_button_response(
+        request,
+        meeting,
+        user,
+        False,
+        f"Check-in removed: {user.first_name} {user.last_name}",
+    )
+
+
+def _guest_rate_limited(request):
+    """Per-IP ceiling on guest sign-ins, well above real meeting volume."""
+    ip = request.META.get("REMOTE_ADDR") or "unknown"
+    key = f"kiosk-guest-signin:{ip}"
+    count = cache.get(key, 0)
+    if count >= GUEST_SIGNIN_MAX_PER_HOUR:
+        return True
+    cache.set(key, count + 1, 3600)
+    return False
+
+
+def checkin_guest_form(request, meeting_id):
+    """Returns a blank guest form.
+
+    The success panel swaps itself back to this after a few seconds, so a
+    second walk-in doesn't need someone to notice and reload the page.
+    """
+    meeting = get_object_or_404(Meeting, id=meeting_id)
+    if not _kiosk_authorized(request, meeting):
+        return HttpResponseForbidden("This kiosk link is no longer valid.")
+    return render(request, "meetings/partials/guest_form.html", {"meeting": meeting})
+
+
+@require_POST
 def checkin_guest(request, meeting_id):
     """POST endpoint: record a walk-in guest's name and email."""
-    if request.method == "POST":
-        meeting = get_object_or_404(Meeting, id=meeting_id)
-        first_name = request.POST.get("guest_first_name")
-        last_name = request.POST.get("guest_last_name")
-        email = request.POST.get("guest_email")
+    meeting, denied = _kiosk_write_guard(request, meeting_id)
+    if denied:
+        return denied
 
-        if first_name and last_name and email:
-            Attendance.objects.create(
-                meeting=meeting,
-                guest_first_name=first_name,
-                guest_last_name=last_name,
-                guest_email=email,
-            )
-            return render(
-                request, "meetings/partials/guest_success.html", {"name": first_name}
-            )
+    first_name = (request.POST.get("guest_first_name") or "").strip()
+    last_name = (request.POST.get("guest_last_name") or "").strip()
+    email = (request.POST.get("guest_email") or "").strip().lower()
 
-    return HttpResponseForbidden()
+    error = None
+    if not (first_name and last_name and email):
+        error = "Please fill in your first name, last name, and email."
+    else:
+        try:
+            validate_email(email)
+        except ValidationError:
+            error = "That doesn't look like a valid email address."
+    if error is None and _guest_rate_limited(request):
+        error = (
+            "Too many sign-ins from this device just now. "
+            "Please ask an officer to add you."
+        )
+
+    if error:
+        # Render the form back with the error inline. Returning a bare 403,
+        # as this used to, means HTMX declines to swap and the visitor sees
+        # nothing happen at all.
+        return render(
+            request,
+            "meetings/partials/guest_form.html",
+            {
+                "meeting": meeting,
+                "error": error,
+                "guest_first_name": first_name,
+                "guest_last_name": last_name,
+                "guest_email": email,
+            },
+        )
+
+    # Signing in twice is a double-tap, not a second guest.
+    Attendance.objects.get_or_create(
+        meeting=meeting,
+        guest_email=email,
+        defaults={
+            "guest_first_name": first_name,
+            "guest_last_name": last_name,
+            "source": Attendance.SOURCE_KIOSK,
+        },
+    )
+    return render(
+        request,
+        "meetings/partials/guest_success.html",
+        {"meeting": meeting, "name": first_name},
+    )

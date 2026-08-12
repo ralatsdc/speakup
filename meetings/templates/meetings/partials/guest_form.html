@@ -1,0 +1,33 @@
+{% comment %}
+Re-rendered with `error` and the submitted values on a failed sign-in, so a
+bad email tells the visitor what to fix instead of silently doing nothing.
+{% endcomment %}
+{% if error %}
+    <div class="alert alert-warning" role="alert">{{ error }}</div>
+{% endif %}
+<form hx-post="{% url 'checkin_guest' meeting.id %}"
+      hx-target="#guest-form-container"
+      hx-swap="innerHTML"
+      hx-disabled-elt="find button[type='submit']"
+      hx-sync="this:drop">
+    {% csrf_token %}
+    <div class="mb-3">
+        <label class="form-label" for="guest_first_name">First Name</label>
+        <input type="text" id="guest_first_name" name="guest_first_name"
+               class="form-control form-control-lg"
+               value="{{ guest_first_name|default:'' }}" required>
+    </div>
+    <div class="mb-3">
+        <label class="form-label" for="guest_last_name">Last Name</label>
+        <input type="text" id="guest_last_name" name="guest_last_name"
+               class="form-control form-control-lg"
+               value="{{ guest_last_name|default:'' }}" required>
+    </div>
+    <div class="mb-3">
+        <label class="form-label" for="guest_email">Email Address</label>
+        <input type="email" id="guest_email" name="guest_email"
+               class="form-control form-control-lg"
+               value="{{ guest_email|default:'' }}" required>
+    </div>
+    <button type="submit" class="btn btn-success w-100 btn-lg">I'm here!</button>
+</form>

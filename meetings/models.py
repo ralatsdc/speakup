@@ -1,4 +1,5 @@
 import logging
+import secrets
 
 from django.db import models
 from django.conf import settings
@@ -7,6 +8,11 @@ from django.db.models.signals import post_save
 from django.dispatch import receiver
 
 logger = logging.getLogger(__name__)
+
+
+def generate_kiosk_token():
+    """A short, unguessable token scoping anonymous kiosk access to one meeting."""
+    return secrets.token_urlsafe(16)
 
 
 class Role(models.Model):
@@ -161,6 +167,19 @@ class Meeting(models.Model):
         blank=True,
         help_text="Numeric Zoom meeting ID for this meeting's link, used for "
         "attendance/registrant API calls. Keep in sync with the link above.",
+    )
+
+    # The check-in kiosk is deliberately usable without a login — members tap
+    # their name as they walk in, and the QR code lets them do it from their
+    # phone. This token keeps that from meaning "anyone who guesses /kiosk/".
+    # It goes in the QR URL, is stashed in the visitor's session, and rotates
+    # with every meeting, so last week's link stops working on its own.
+    kiosk_token = models.CharField(
+        max_length=32,
+        default=generate_kiosk_token,
+        editable=False,
+        help_text="Scopes anonymous kiosk access to this meeting. Rotates per "
+        "meeting; carried in the QR code URL.",
     )
 
     def __str__(self):
@@ -362,6 +381,24 @@ class Attendance(models.Model):
     guest_first_name = models.CharField(max_length=50, blank=True)
     guest_last_name = models.CharField(max_length=50, blank=True)
     guest_email = models.EmailField(blank=True)
+
+    SOURCE_KIOSK = "kiosk"
+    SOURCE_ADMIN = "admin"
+    SOURCE_IMPORT = "import"
+    SOURCE_CHOICES = [
+        (SOURCE_KIOSK, "Kiosk / QR check-in"),
+        (SOURCE_ADMIN, "Entered in admin"),
+        (SOURCE_IMPORT, "Imported"),
+    ]
+    # Provenance, so a scrambled roster is diagnosable rather than mysterious.
+    # Blank means "recorded before we started tracking this, or by a path that
+    # doesn't set it" — deliberately not defaulted to a real source.
+    source = models.CharField(
+        max_length=16,
+        choices=SOURCE_CHOICES,
+        blank=True,
+        help_text="How this attendance record was created.",
+    )
 
     timestamp = models.DateTimeField(auto_now_add=True)
     thank_you_sent_at = models.DateTimeField(

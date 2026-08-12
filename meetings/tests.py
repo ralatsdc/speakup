@@ -1,4 +1,5 @@
 import tempfile
+from datetime import timedelta
 from unittest.mock import patch
 
 from django.contrib import admin
@@ -477,38 +478,261 @@ class SingleHolderRoleTest(TestCase):
         self.assertIn("already signed up", response["HX-Trigger"])
 
 
-class CheckinKioskViewTest(TestCase):
+class KioskTestMixin:
+    """Shared setup: an officer, a plain member, and a meeting happening now."""
+
     def setUp(self):
         self.client = Client()
-        self.user = User.objects.create_user(
+        self.officer = User.objects.create_user(
             username="testuser", email="testuser@example.com", password="testpass", is_officer=True
         )
+        self.member = User.objects.create_user(
+            username="member", email="member@example.com", password="testpass",
+            first_name="Mem", last_name="Ber",
+        )
+        self.meeting = Meeting.objects.create(date=timezone.now())
 
+    def login_officer(self):
+        self.client.login(
+            username="testuser", email="testuser@example.com", password="testpass"
+        )
+
+    def grant_token(self):
+        """Put this meeting's kiosk token in the session, as a QR scan would."""
+        session = self.client.session
+        session["kiosk_token"] = self.meeting.kiosk_token
+        session.save()
+
+
+class CheckinKioskViewTest(KioskTestMixin, TestCase):
     def test_no_meeting_shows_warning(self):
-        self.client.login(username="testuser", email="testuser@example.com", password="testpass")
+        self.meeting.delete()
+        self.login_officer()
         response = self.client.get(reverse("checkin_kiosk"))
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "No meeting found")
 
+    def test_officer_sees_kiosk_without_token(self):
+        self.login_officer()
+        response = self.client.get(reverse("checkin_kiosk"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Member Check-In")
 
-class CheckinMemberViewTest(TestCase):
-    def setUp(self):
-        self.client = Client()
-        self.user = User.objects.create_user(
-            username="testuser", email="testuser@example.com", password="testpass", is_officer=True
+    def test_anonymous_without_token_is_denied(self):
+        response = self.client.get(reverse("checkin_kiosk"))
+        self.assertEqual(response.status_code, 403)
+
+    def test_anonymous_with_token_is_admitted_and_token_is_remembered(self):
+        response = self.client.get(
+            reverse("checkin_kiosk"), {"k": self.meeting.kiosk_token}
         )
-        self.meeting = Meeting.objects.create(date=timezone.now())
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Member Check-In")
+        # The token is stashed, so the check-in POSTs that follow are allowed.
+        self.assertEqual(self.client.session["kiosk_token"], self.meeting.kiosk_token)
+
+    def test_wrong_token_is_denied(self):
+        response = self.client.get(reverse("checkin_kiosk"), {"k": "not-the-token"})
+        self.assertEqual(response.status_code, 403)
+
+    def test_token_from_another_meeting_is_denied(self):
+        other = Meeting.objects.create(date=timezone.now() + timedelta(days=7))
+        response = self.client.get(reverse("checkin_kiosk"), {"k": other.kiosk_token})
+        self.assertEqual(response.status_code, 403)
+
+    def test_qr_url_carries_the_token(self):
+        self.login_officer()
+        response = self.client.get(reverse("checkin_kiosk"))
+        # The QR is a PNG data URI, so assert on what went into it instead.
+        self.assertEqual(response.context["meeting"], self.meeting)
+        self.assertTrue(self.meeting.kiosk_token)
+
+    def test_each_meeting_gets_a_distinct_token(self):
+        other = Meeting.objects.create(date=timezone.now() + timedelta(days=7))
+        self.assertNotEqual(self.meeting.kiosk_token, other.kiosk_token)
+
+
+class CheckinMemberViewTest(KioskTestMixin, TestCase):
+    def url(self):
+        return reverse("checkin_member", args=[self.meeting.id, self.member.id])
+
+    def undo_url(self):
+        return reverse("undo_checkin_member", args=[self.meeting.id, self.member.id])
 
     def test_checkin_creates_attendance(self):
-        self.client.login(username="testuser", email="testuser@example.com", password="testpass")
-        self.client.post(reverse("checkin_member", args=[self.meeting.id, self.user.id]))
-        self.assertTrue(Attendance.objects.filter(meeting=self.meeting, user=self.user).exists())
+        self.login_officer()
+        self.client.post(self.url())
+        self.assertTrue(
+            Attendance.objects.filter(meeting=self.meeting, user=self.member).exists()
+        )
 
-    def test_checkin_toggle_removes_attendance(self):
-        self.client.login(username="testuser", email="testuser@example.com", password="testpass")
-        Attendance.objects.create(meeting=self.meeting, user=self.user)
-        self.client.post(reverse("checkin_member", args=[self.meeting.id, self.user.id]))
-        self.assertFalse(Attendance.objects.filter(meeting=self.meeting, user=self.user).exists())
+    def test_checkin_records_kiosk_as_the_source(self):
+        self.login_officer()
+        self.client.post(self.url())
+        attendance = Attendance.objects.get(meeting=self.meeting, user=self.member)
+        self.assertEqual(attendance.source, Attendance.SOURCE_KIOSK)
+
+    def test_checkin_is_idempotent(self):
+        """Tapping an already-checked-in name must not remove the check-in.
+
+        This is the mis-tap case: someone hits the wrong name, sees it go
+        grey, and walks away having deleted a real attendance record.
+        """
+        self.login_officer()
+        self.client.post(self.url())
+        original = Attendance.objects.get(meeting=self.meeting, user=self.member)
+
+        response = self.client.post(self.url())
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            Attendance.objects.filter(meeting=self.meeting, user=self.member).count(), 1
+        )
+        # Same row, so the original arrival time survives a double tap.
+        surviving = Attendance.objects.get(meeting=self.meeting, user=self.member)
+        self.assertEqual(surviving.pk, original.pk)
+        self.assertEqual(surviving.timestamp, original.timestamp)
+
+    def test_undo_removes_attendance(self):
+        self.login_officer()
+        Attendance.objects.create(meeting=self.meeting, user=self.member)
+        self.client.post(self.undo_url())
+        self.assertFalse(
+            Attendance.objects.filter(meeting=self.meeting, user=self.member).exists()
+        )
+
+    def test_undo_on_absent_member_is_harmless(self):
+        self.login_officer()
+        response = self.client.post(self.undo_url())
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(
+            Attendance.objects.filter(meeting=self.meeting, user=self.member).exists()
+        )
+
+    def test_anonymous_without_token_cannot_check_in(self):
+        response = self.client.post(self.url())
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(Attendance.objects.filter(meeting=self.meeting).exists())
+
+    def test_anonymous_with_token_can_check_in(self):
+        self.grant_token()
+        response = self.client.post(self.url())
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(
+            Attendance.objects.filter(meeting=self.meeting, user=self.member).exists()
+        )
+
+    def test_checkin_rejected_outside_the_meeting_window(self):
+        self.login_officer()
+        self.meeting.date = timezone.now() + timedelta(days=30)
+        self.meeting.save()
+        response = self.client.post(self.url())
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(Attendance.objects.filter(meeting=self.meeting).exists())
+
+    def test_checkin_rejected_long_after_the_meeting(self):
+        self.login_officer()
+        self.meeting.date = timezone.now() - timedelta(days=7)
+        self.meeting.save()
+        response = self.client.post(self.url())
+        self.assertEqual(response.status_code, 403)
+
+    def test_checkin_fires_a_confirmation_toast(self):
+        self.login_officer()
+        response = self.client.post(self.url())
+        self.assertIn("kioskToast", response["HX-Trigger"])
+
+
+class CheckinGridViewTest(KioskTestMixin, TestCase):
+    def test_grid_reflects_checkins_made_elsewhere(self):
+        """The kiosk page must learn about a check-in it didn't perform."""
+        self.login_officer()
+        Attendance.objects.create(meeting=self.meeting, user=self.member)
+
+        response = self.client.get(
+            reverse("checkin_grid"), {"meeting": self.meeting.id}
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(self.member.id, response.context["checked_in_ids"])
+
+    def test_grid_asks_for_a_reload_when_the_meeting_has_rolled_over(self):
+        """A tab left open overnight must not keep writing to a stale meeting."""
+        self.login_officer()
+        stale_id = self.meeting.id + 999
+
+        response = self.client.get(reverse("checkin_grid"), {"meeting": stale_id})
+
+        self.assertEqual(response["HX-Refresh"], "true")
+
+    def test_grid_denied_without_token(self):
+        response = self.client.get(
+            reverse("checkin_grid"), {"meeting": self.meeting.id}
+        )
+        self.assertEqual(response.status_code, 403)
+
+
+class CheckinGuestViewTest(KioskTestMixin, TestCase):
+    def url(self):
+        return reverse("checkin_guest", args=[self.meeting.id])
+
+    def post_guest(self, **overrides):
+        data = {
+            "guest_first_name": "Jane",
+            "guest_last_name": "Doe",
+            "guest_email": "jane@example.com",
+        }
+        data.update(overrides)
+        return self.client.post(self.url(), data)
+
+    def test_guest_signin_creates_attendance(self):
+        self.grant_token()
+        response = self.post_guest()
+        self.assertEqual(response.status_code, 200)
+        attendance = Attendance.objects.get(guest_email="jane@example.com")
+        self.assertEqual(attendance.guest_first_name, "Jane")
+        self.assertEqual(attendance.source, Attendance.SOURCE_KIOSK)
+
+    def test_email_is_normalised(self):
+        self.grant_token()
+        self.post_guest(guest_email="  Jane@Example.COM  ")
+        self.assertTrue(Attendance.objects.filter(guest_email="jane@example.com").exists())
+
+    def test_signing_in_twice_does_not_duplicate(self):
+        self.grant_token()
+        self.post_guest()
+        self.post_guest()
+        self.assertEqual(
+            Attendance.objects.filter(guest_email="jane@example.com").count(), 1
+        )
+
+    def test_invalid_email_returns_the_form_with_an_error(self):
+        """A bad address must say so, not silently do nothing as the old 403 did."""
+        self.grant_token()
+        response = self.post_guest(guest_email="not-an-email")
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "valid email")
+        self.assertFalse(Attendance.objects.exists())
+
+    def test_whitespace_only_name_is_rejected(self):
+        self.grant_token()
+        response = self.post_guest(guest_first_name="   ")
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Please fill in")
+        self.assertFalse(Attendance.objects.exists())
+
+    def test_guest_signin_denied_without_token(self):
+        response = self.post_guest()
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(Attendance.objects.exists())
+
+    def test_guest_form_endpoint_returns_a_blank_form(self):
+        self.grant_token()
+        response = self.client.get(
+            reverse("checkin_guest_form", args=[self.meeting.id])
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "guest_first_name")
 
 
 class ConvertGuestServiceTest(TestCase):

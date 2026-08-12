@@ -1,6 +1,18 @@
-<div class="text-center py-5 fade-in">
+{% comment %}
+Swaps itself back to a blank form after a few seconds. The old version left
+a "Reset Form" button calling location.reload(), so a second walk-in was
+stuck until somebody noticed and clicked it.
+{% endcomment %}
+<div class="text-center py-5 fade-in"
+     hx-get="{% url 'checkin_guest_form' meeting.id %}"
+     hx-trigger="load delay:6s"
+     hx-target="#guest-form-container"
+     hx-swap="innerHTML">
     <div class="display-1 text-success mb-3">✓</div>
     <h4>Welcome, {{ name }}!</h4>
     <p class="text-muted">You are checked in.</p>
-    <button class="btn btn-outline-primary btn-sm mt-3" onclick="location.reload()">Reset Form</button>
+    <button class="btn btn-outline-primary btn-sm mt-3"
+            hx-get="{% url 'checkin_guest_form' meeting.id %}"
+            hx-target="#guest-form-container"
+            hx-swap="innerHTML">Sign in another guest</button>
 </div>
