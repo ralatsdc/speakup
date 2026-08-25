@@ -15,3 +15,6 @@ __pycache__/
 # (regenerate with import_scripts/build_artifacts.py)
 import_scripts/parse_preview.txt
 import_scripts/alias_map_draft.md
+
+# Build output from collectstatic; Railway regenerates it at deploy time.
+staticfiles/
