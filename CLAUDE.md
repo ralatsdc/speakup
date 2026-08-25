@@ -50,7 +50,11 @@ A `post_save` signal on `Meeting` auto-populates `MeetingSession` and `MeetingRo
 
 ### Frontend
 
-Bootstrap 5 + HTMX 1.9 (both via CDN), no JS framework. HTMX partials in `meetings/templates/meetings/partials/` handle role toggle, note editing, and kiosk check-in. CSRF token set globally via `hx-headers` on `<body>`. Server-triggered alerts use `HX-Trigger: showAlert`.
+Bootstrap 5 + HTMX 1.9, no JS framework. Both are **self-hosted** under
+`core/static/core/vendor/`, as are the webfonts under `core/static/core/fonts/`
+(`@font-face` lives at the top of `custom.css`). Do not reintroduce CDN tags —
+the meeting venue's wifi has blocked/throttled third-party CDNs, and a
+render-blocking CDN tag in `<head>` takes the whole site down there. HTMX partials in `meetings/templates/meetings/partials/` handle role toggle, note editing, and kiosk check-in. CSRF token set globally via `hx-headers` on `<body>`. Server-triggered alerts use `HX-Trigger: showAlert`.
 
 ### Permission Flags
 
