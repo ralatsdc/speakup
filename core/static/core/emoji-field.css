@@ -1,0 +1,89 @@
+/* Emoji picker button + popover for admin compose fields.
+   Colors come from Django admin's CSS variables so the control follows the
+   admin's light/dark theme. The picker itself is a shadow-DOM web component
+   and is themed separately, from emoji-field.js. */
+
+/* Two layouts to sit in. On the review page the fields are full-width blocks
+   and the wrapper stacks underneath. In the admin change form the field sits
+   in a .flex-container and the wrapper becomes a sibling flex item, landing
+   directly against the input -- so there the gap has to be horizontal. */
+.emoji-field {
+  position: relative;
+  margin-top: 0.6em;
+}
+
+.flex-container > .emoji-field {
+  margin-top: 0;
+  margin-left: 0.85em;
+  align-self: center;
+}
+
+/* A textarea is tall enough that centring the button against it looks
+   unmoored; line it up with the first row of text instead. */
+.flex-container > textarea + .emoji-field {
+  align-self: flex-start;
+  margin-top: 0.15em;
+}
+
+.emoji-field-button {
+  font: inherit;
+  font-size: 0.85em;
+  line-height: 1.4;
+  padding: 0.25em 0.7em;
+  cursor: pointer;
+  color: var(--body-fg, #333);
+  background: var(--darkened-bg, #f8f8f8);
+  border: 1px solid var(--border-color, #ccc);
+  border-radius: 4px;
+}
+
+.emoji-field-button:hover {
+  background: var(--selected-bg, #e4e4e4);
+}
+
+.emoji-field-button:focus-visible {
+  outline: 2px solid var(--link-fg, #417690);
+  outline-offset: 1px;
+}
+
+/* Fixed, not absolute, and positioned from JS. Django admin's .form-row is a
+   clearfix with overflow:hidden, which clips an absolutely-positioned child to
+   the height of the row -- the picker rendered at full size but only ~12px of
+   it was visible. overflow:hidden does not clip fixed descendants. Where the
+   Popover API is available the element also sits in the top layer, which puts
+   it above admin's own stacking contexts and brings light-dismiss with it. */
+.emoji-field-popover {
+  position: fixed;
+  z-index: 1000;
+  inset: auto;
+  margin: 0;
+  padding: 0;
+  overflow: visible;
+  color: var(--body-fg, #333);
+  background: var(--body-bg, #fff);
+  border: 1px solid var(--border-color, #ccc);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px -8px rgba(0, 0, 0, 0.4);
+}
+
+/* The UA stylesheet gives [popover] its own border/padding/centering. */
+.emoji-field-popover:popover-open {
+  display: block;
+}
+
+/* Only padded while it holds a status message ("Loading…", "unavailable");
+   the picker component brings its own padding and rounded corners. */
+.emoji-field-popover:not(:has(emoji-picker)) {
+  padding: 0.6em 0.9em;
+  font-size: 0.9em;
+}
+
+.emoji-field-popover emoji-picker {
+  display: block;
+  --background: var(--body-bg, #fff);
+  --border-color: var(--border-color, #ccc);
+  --indicator-color: var(--link-fg, #417690);
+  --input-border-color: var(--border-color, #ccc);
+  --input-font-color: var(--body-fg, #333);
+  --outline-color: var(--link-fg, #417690);
+}

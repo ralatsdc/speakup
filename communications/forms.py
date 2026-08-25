@@ -1,5 +1,7 @@
 from django import forms
 
+from core.widgets import EmojiTextarea, EmojiTextInput
+
 from .models import Announcement
 
 
@@ -19,6 +21,13 @@ class AnnouncementAdminForm(forms.ModelForm):
     class Meta:
         model = Announcement
         fields = "__all__"
+        # Announcements are the one place officers write prose that members
+        # read as-is, and emoji are part of that voice. The OS picker is the
+        # only alternative and it is both undiscoverable and awkward mid-line.
+        widgets = {
+            "subject": EmojiTextInput,
+            "body": EmojiTextarea,
+        }
 
     def clean(self):
         cleaned = super().clean()

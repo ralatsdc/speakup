@@ -496,3 +496,100 @@ class MarkdownRenderingTest(TestCase):
         msg = mail.outbox[0]
         self.assertEqual(msg.body, "Hi Mo 🎉")  # plain text, no markers
         self.assertIn("<strong>Mo</strong>", msg.alternatives[0][0])
+
+
+class EmojiPickerTest(TestCase):
+    """The emoji picker is wired onto every field officers compose in, and is
+    served entirely from our own origin."""
+
+    def setUp(self):
+        self.staff = User.objects.create_superuser(
+            "chief", "chief@example.com", "pw")
+        self.client.force_login(self.staff)
+
+    def test_admin_change_form_wires_subject_and_body(self):
+        announcement = Announcement.objects.create(
+            subject="Hello", body="Test", audience="all")
+        resp = self.client.get(
+            reverse("admin:communications_announcement_change",
+                    args=[announcement.id]))
+        html = resp.content.decode()
+        # Both fields marked, and the assets pulled in by the widget Media.
+        self.assertEqual(html.count("data-emoji-picker-src"), 2)
+        # Hash-agnostic: ManifestStaticFilesStorage stamps these in production.
+        self.assertRegex(html, r"core/emoji-field(\.\w+)?\.js")
+        self.assertRegex(html, r"core/emoji-field(\.\w+)?\.css")
+
+    def test_review_page_wires_subject_and_body(self):
+        announcement = Announcement.objects.create(
+            subject="Hello", body="Test", audience="all")
+        User.objects.create_user(
+            "m", "m@example.com", "pw", first_name="M")
+        resp = self.client.get(
+            reverse("email_review"),
+            {"workflow": "announcement", "announcement": announcement.id})
+        html = resp.content.decode()
+        self.assertEqual(html.count("data-emoji-picker-src"), 2)
+        self.assertRegex(html, r"core/emoji-field(\.\w+)?\.js")
+
+    def test_picker_assets_are_self_hosted(self):
+        """Regression guard for the whole point of the exercise.
+
+        emoji-picker-element's stock ``dataSource`` is a jsdelivr URL. If the
+        ``data-source`` attribute is ever dropped, the picker silently falls
+        back to it and renders empty on any network that filters third-party
+        CDNs -- the failure this project already spent a release removing.
+        """
+        announcement = Announcement.objects.create(
+            subject="Hello", body="Test", audience="all")
+        pages = [
+            self.client.get(reverse("admin:communications_announcement_change",
+                                    args=[announcement.id])),
+            self.client.get(reverse("email_review"),
+                            {"workflow": "announcement",
+                             "announcement": announcement.id}),
+        ]
+        for resp in pages:
+            html = resp.content.decode()
+            self.assertNotIn("cdn.jsdelivr.net", html)
+            self.assertNotIn("unpkg.com", html)
+            self.assertRegex(html, r"emoji-picker-element/data(\.\w+)?\.json")
+
+
+class EmojiRoundTripTest(TestCase):
+    """Emoji already rendered end to end; nothing asserted it until now."""
+
+    def test_emoji_survive_subject_and_body(self):
+        User.objects.create_user(
+            "member", "member@example.com", "pw", first_name="Ada")
+        announcement = Announcement.objects.create(
+            subject="🎤 Meeting Wednesday",
+            body="Bring a guest! 🎉 See you at **6:45**.",
+            audience="all",
+        )
+        sent = announcement.send()
+        self.assertEqual(sent, 1)
+        message = mail.outbox[0]
+        self.assertEqual(message.subject, "🎤 Meeting Wednesday")
+        self.assertIn("🎉", message.body)
+        # The HTML alternative carries them too, un-escaped.
+        html_body = message.alternatives[0][0]
+        self.assertIn("🎉", html_body)
+
+    def test_emoji_subject_encodes_for_the_wire(self):
+        """A non-ASCII subject has to survive RFC 2047 encoding, not just the
+        Python-side attribute."""
+        User.objects.create_user(
+            "member", "member@example.com", "pw", first_name="Ada")
+        announcement = Announcement.objects.create(
+            subject="🎤 Meeting Wednesday", body="Hi", audience="all")
+        announcement.send()
+        raw = mail.outbox[0].message().as_bytes()
+        self.assertNotIn(b"\xf0\x9f\x8e\xa4", raw.split(b"\n\n", 1)[0])  # header is encoded
+        from email import message_from_bytes
+        from email.header import decode_header, make_header
+        parsed = message_from_bytes(raw)
+        self.assertEqual(
+            str(make_header(decode_header(parsed["Subject"]))),
+            "🎤 Meeting Wednesday",
+        )
