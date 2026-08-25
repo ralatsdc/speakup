@@ -3,9 +3,26 @@
    admin's light/dark theme. The picker itself is a shadow-DOM web component
    and is themed separately, from emoji-field.js. */
 
+/* Two layouts to sit in. On the review page the fields are full-width blocks
+   and the wrapper stacks underneath. In the admin change form the field sits
+   in a .flex-container and the wrapper becomes a sibling flex item, landing
+   directly against the input -- so there the gap has to be horizontal. */
 .emoji-field {
   position: relative;
-  margin-top: 0.4em;
+  margin-top: 0.6em;
+}
+
+.flex-container > .emoji-field {
+  margin-top: 0;
+  margin-left: 0.85em;
+  align-self: center;
+}
+
+/* A textarea is tall enough that centring the button against it looks
+   unmoored; line it up with the first row of text instead. */
+.flex-container > textarea + .emoji-field {
+  align-self: flex-start;
+  margin-top: 0.15em;
 }
 
 .emoji-field-button {
