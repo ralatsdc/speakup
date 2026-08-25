@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load static %}
 
 {% block content %}
 <!-- HERO -->
@@ -20,7 +21,8 @@
       </div>
       <div class="col-lg-6">
         <div class="photo-frame">
-          <img src="https://secure.meetupstatic.com/photos/event/9/b/1/6/clean_417219702.webp"
+          <img src="{% static 'core/img/meetup-hero.webp' %}"
+               width="300" height="268"
                alt="Members of Speak Up Cambridge gathered together at a meetup">
         </div>
       </div>
