@@ -11,6 +11,7 @@
 
 {% block extrastyle %}
     {{ block.super }}
+    <link rel="stylesheet" href="{% static 'core/emoji-field.css' %}">
     <style>
         .email-review .group { border: 1px solid var(--hairline-color, #ddd);
             border-radius: 4px; padding: 1em 1.2em; margin-bottom: 1.2em; }
@@ -38,6 +39,8 @@
 {% endblock %}
 
 {% block content %}
+{% static 'core/vendor/emoji-picker-element/picker.js' as emoji_picker_src %}
+{% static 'core/vendor/emoji-picker-element/data.json' as emoji_data_src %}
 <div class="email-review">
     {% if total %}
         <p><strong>{{ total }}</strong> email{{ total|pluralize }} will be sent. Review
@@ -60,10 +63,16 @@
 
                     <label for="subj_{{ group.key }}">Subject</label>
                     <input type="text" id="subj_{{ group.key }}" name="subject_{{ group.key }}"
-                           value="{{ group.subject }}">
+                           value="{{ group.subject }}"
+                           data-emoji
+                           data-emoji-picker-src="{{ emoji_picker_src }}"
+                           data-emoji-data-src="{{ emoji_data_src }}">
 
                     <label for="body_{{ group.key }}">Body</label>
-                    <textarea id="body_{{ group.key }}" name="body_{{ group.key }}">{{ group.body }}</textarea>
+                    <textarea id="body_{{ group.key }}" name="body_{{ group.key }}"
+                              data-emoji
+                              data-emoji-picker-src="{{ emoji_picker_src }}"
+                              data-emoji-data-src="{{ emoji_data_src }}">{{ group.body }}</textarea>
 
                     {% if group.placeholders %}
                         <p class="placeholders">Placeholders:
@@ -101,6 +110,7 @@
 </div>
 
 <script src="{% static 'core/vendor/marked.min.js' %}"></script>
+<script src="{% static 'core/emoji-field.js' %}"></script>
 <script>
 (function () {
     // Match the server's Markdown render (nl2br): single newlines -> <br>.
