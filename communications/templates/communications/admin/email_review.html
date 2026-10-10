@@ -99,7 +99,10 @@
             {% endfor %}
 
             <div class="actions">
-                <button type="submit" class="default">Send</button>
+                {# An <input>, not a <button>: Django admin only paints the primary #}
+                {# color on input[type=submit].default, so a <button> renders gray. #}
+                <input type="submit" class="default"
+                       value="Send {{ total }} email{{ total|pluralize }} now">
                 <button type="submit" name="_cancel" value="1" class="cancel">Cancel</button>
             </div>
         </form>

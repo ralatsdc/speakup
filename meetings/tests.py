@@ -2050,3 +2050,33 @@ class AttendanceAdminTest(TestCase):
         self.assertFalse(admin_instance.thanked(self.walkin_att))
         self.walkin_att.thank_you_sent_at = timezone.now()
         self.assertTrue(admin_instance.thanked(self.walkin_att))
+
+
+class MeetingAddFormTest(TestCase):
+    """#72: the add form omits what the MeetingType fills in on save."""
+
+    def setUp(self):
+        self.staff = User.objects.create_superuser("boss", "boss@example.com", "pw")
+        self.client.force_login(self.staff)
+
+    def test_add_form_hides_auto_filled_fields_and_inlines(self):
+        resp = self.client.get(reverse("admin:meetings_meeting_add"))
+        form = resp.context["adminform"].form
+        self.assertEqual(list(form.fields), ["meeting_type", "date", "theme"])
+        self.assertEqual(resp.context["inline_admin_formsets"], [])
+
+    def test_change_form_still_shows_zoom_fields_and_inlines(self):
+        meeting = Meeting.objects.create(date=timezone.now())
+        resp = self.client.get(
+            reverse("admin:meetings_meeting_change", args=[meeting.id]))
+        self.assertIn("zoom_link", resp.context["adminform"].form.fields)
+        self.assertTrue(resp.context["inline_admin_formsets"])
+
+    def test_zoom_details_still_copied_from_type_when_added_via_admin(self):
+        mt = MeetingType.objects.create(
+            name="Regular", zoom_link="https://zoom.us/j/123", zoom_meeting_id="123")
+        self.client.post(reverse("admin:meetings_meeting_add"), {
+            "meeting_type": mt.id, "date_0": "2030-01-01", "date_1": "18:00:00",
+            "theme": ""})
+        meeting = Meeting.objects.get(meeting_type=mt)
+        self.assertEqual(meeting.zoom_link, "https://zoom.us/j/123")
