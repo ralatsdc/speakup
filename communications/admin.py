@@ -39,7 +39,7 @@ class AnnouncementAdmin(admin.ModelAdmin):
         extra = obj.recipients.count() - len(names)
         return ", ".join(names) + (f" +{extra} more" if extra > 0 else "")
 
-    @admin.action(description="Send selected announcements via Email")
+    @admin.action(description="Review & send selected announcements…")
     def send_announcement(self, request, queryset):
         """Route to the review-before-send page rather than dispatching here.
 

@@ -254,24 +254,32 @@ class MeetingAdmin(admin.ModelAdmin):
         css = {"all": ("meetings/admin/meeting_change_form.css",)}
 
     def get_fieldsets(self, request, obj=None):
-        # On the add form there's nothing to collapse behind yet, so show
-        # "Meeting details" open. When changing an existing meeting it stays
-        # collapsed (word_of_the_day is the only field touched regularly).
-        fieldsets = super().get_fieldsets(request, obj)
+        # The add form asks only for what an officer has to decide: type,
+        # date, theme. The Zoom fields are copied from the MeetingType and the
+        # session/role rows are built from its template when the meeting is
+        # saved (populate_meeting_from_type), so showing them empty here just
+        # invites typing over values that would have been filled in. Both are
+        # editable afterwards on the change form.
         if obj is None:
-            fieldsets = [
+            return [
                 (
-                    name,
+                    None,
                     {
-                        **opts,
-                        "classes": tuple(
-                            c for c in opts.get("classes", ()) if c != "collapse"
+                        "fields": ("meeting_type", "date", "theme"),
+                        "description": (
+                            "Zoom details, sessions and roles are filled in "
+                            "from the meeting type when you save."
                         ),
                     },
                 )
-                for name, opts in fieldsets
             ]
-        return fieldsets
+        return super().get_fieldsets(request, obj)
+
+    def get_inline_instances(self, request, obj=None):
+        # Nothing to edit until the meeting exists and has been populated.
+        if obj is None:
+            return []
+        return super().get_inline_instances(request, obj)
 
     def role_count_status(self, obj):
         filled = obj.roles.filter(user__isnull=False).count()

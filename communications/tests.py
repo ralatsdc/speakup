@@ -593,3 +593,29 @@ class EmojiRoundTripTest(TestCase):
             str(make_header(decode_header(parsed["Subject"]))),
             "🎤 Meeting Wednesday",
         )
+
+
+class AnnouncementSendFlowUiTest(TestCase):
+    """#70: the button names what it does, and the review page's Send is a
+    real submit input (Django admin only paints input[type=submit].default,
+    so a <button> rendered gray)."""
+
+    def setUp(self):
+        self.staff = User.objects.create_superuser("boss", "boss@example.com", "pw")
+        self.client.force_login(self.staff)
+        self.announcement = Announcement.objects.create(
+            subject="Hi", body="Body", audience="all")
+
+    def test_change_form_button_says_it_reviews_rather_than_sends(self):
+        resp = self.client.get(
+            reverse("admin:communications_announcement_change",
+                    args=[self.announcement.id]))
+        self.assertContains(resp, "Save &amp; review to send")
+        self.assertContains(resp, "Nothing is")
+
+    def test_review_page_send_is_a_primary_submit_input(self):
+        resp = self.client.get(
+            reverse("email_review"),
+            {"workflow": "announcement", "announcement": self.announcement.id})
+        self.assertContains(resp, '<input type="submit" class="default"')
+        self.assertContains(resp, "email")
