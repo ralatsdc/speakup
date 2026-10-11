@@ -14,7 +14,8 @@ from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 
-from .emails import render as render_template, to_html, total_recipients
+from .emails import (active_senders, default_sender, render as render_template,
+                     to_html, total_recipients)
 
 
 def _resolve_handler(workflow, request):
@@ -143,7 +144,8 @@ def _parse_edits(post, groups):
     for g in groups:
         k = g["key"]
         edits[k] = {"subject": post.get(f"subject_{k}"),
-                    "body": post.get(f"body_{k}")}
+                    "body": post.get(f"body_{k}"),
+                    "sender": post.get(f"sender_{k}")}
     return edits
 
 
@@ -198,4 +200,6 @@ def email_review(request):
         "back_url": back_url,
         "params": handler["params"],
         "total": total_recipients(draft["groups"]),
+        "default_sender": default_sender(),
+        "senders": active_senders(),
     })

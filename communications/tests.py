@@ -8,8 +8,7 @@ from django.utils import timezone
 
 from meetings.models import Meeting, MeetingRole, Role
 from members.models import User
-from .models import Announcement
-from .utils import send_announcement
+from .models import Announcement, Sender
 
 
 class EmailReviewTest(TestCase):
@@ -596,64 +595,69 @@ class EmojiRoundTripTest(TestCase):
         )
 
 
-@override_settings(
-    DEFAULT_FROM_EMAIL="club@example.org",
-    ANNOUNCEMENT_SENDERS=["VP Ed <vped@example.org>", "president@example.org"],
-)
-class AnnouncementSenderTest(TestCase):
-    """#69: an announcement can go out from any address on the allowed list;
-    anything else is refused before it reaches Brevo."""
+@override_settings(DEFAULT_FROM_EMAIL="club@example.org")
+class SenderChoiceTest(TestCase):
+    """#69: every review-before-send workflow can pick a sender; the default
+    (and all automatic mail) stays DEFAULT_FROM_EMAIL."""
 
     def setUp(self):
         self.staff = User.objects.create_superuser("boss", "boss@example.com", "pw")
-        self.member = User.objects.create_user(
-            "m", "m@example.com", "pw", first_name="Em")
         self.client.force_login(self.staff)
+        self.url = reverse("email_review")
+        self.vped = Sender.objects.create(name="VP Ed", email="vped@example.org")
+        self.retired = Sender.objects.create(
+            email="old@example.org", is_active=False)
+        self.ann = Announcement.objects.create(
+            subject="Hi", body="Body", audience="all")
+        User.objects.create_user("m", "m@example.com", "pw", first_name="Em")
 
-    def _announcement(self, **kw):
-        return Announcement.objects.create(
-            subject="Hi", body="Body", audience="all", **kw)
+    def _post(self, **extra):
+        return self.client.post(self.url, {
+            "workflow": "announcement", "announcements": self.ann.id, **extra})
 
-    def test_blank_sender_uses_default(self):
-        send_announcement(self._announcement())
+    def test_sender_header_formats_name_and_bare_address(self):
+        self.assertEqual(self.vped.header, "VP Ed <vped@example.org>")
+        self.assertEqual(self.retired.header, "old@example.org")
+
+    def test_review_page_offers_default_and_active_senders_only(self):
+        resp = self.client.get(self.url, {
+            "workflow": "announcement", "announcement": self.ann.id})
+        self.assertContains(resp, "club@example.org (default)")
+        self.assertContains(resp, "VP Ed &lt;vped@example.org&gt;")
+        self.assertNotContains(resp, "old@example.org")
+
+    def test_no_choice_uses_default(self):
+        self._post()
         self.assertEqual(mail.outbox[0].from_email, "club@example.org")
 
     def test_chosen_sender_is_used(self):
-        send_announcement(self._announcement(from_email="VP Ed <vped@example.org>"))
+        self._post(**{f"sender_ann{self.ann.id}": self.vped.pk})
         self.assertEqual(mail.outbox[0].from_email, "VP Ed <vped@example.org>")
 
-    def test_disallowed_sender_is_refused_and_nothing_sent(self):
-        with self.assertRaises(ValueError):
-            send_announcement(self._announcement(from_email="evil@elsewhere.com"))
+    def test_retired_or_bogus_sender_is_refused_and_nothing_sent(self):
+        for bad in (self.retired.pk, 99999, "abc"):
+            resp = self._post(**{f"sender_ann{self.ann.id}": bad})
+            self.assertEqual(resp.status_code, 302)
         self.assertFalse(mail.outbox)
+        self.ann.refresh_from_db()
+        self.assertIsNone(self.ann.sent_at)
 
-    def test_form_offers_default_plus_configured_senders(self):
-        from communications.forms import AnnouncementAdminForm
+    def test_meeting_workflow_can_pick_sender_too(self):
+        role = Role.objects.create(name="Toastmaster")
+        m = Meeting.objects.create(date=timezone.now() + timedelta(days=3))
+        alice = User.objects.create_user(
+            "alice", "alice@example.com", "pw", first_name="Alice")
+        MeetingRole.objects.create(meeting=m, role=role, user=alice)
+        self.client.post(self.url, {
+            "workflow": "reminders", "meeting": m.id,
+            "sender_assignees": self.vped.pk})
+        self.assertTrue(mail.outbox)
+        self.assertTrue(all(
+            msg.from_email == "VP Ed <vped@example.org>" for msg in mail.outbox
+            if "alice@example.com" in msg.to))
 
-        choices = [c[0] for c in AnnouncementAdminForm().fields["from_email"].choices]
-        self.assertEqual(
-            choices,
-            ["", "club@example.org", "VP Ed <vped@example.org>",
-             "president@example.org"])
+    def test_automatic_mail_stays_on_default(self):
+        from communications.emails import send_simple
 
-    def test_form_rejects_unlisted_sender(self):
-        from communications.forms import AnnouncementAdminForm
-
-        form = AnnouncementAdminForm(data={
-            "subject": "Hi", "body": "x", "audience": "all",
-            "from_email": "evil@elsewhere.com"})
-        self.assertFalse(form.is_valid())
-        self.assertIn("from_email", form.errors)
-
-    def test_review_page_shows_sender(self):
-        a = self._announcement(from_email="president@example.org")
-        resp = self.client.get(
-            reverse("email_review"), {"workflow": "announcement", "announcement": a.id})
-        self.assertContains(resp, "From: <strong>president@example.org</strong>")
-
-    def test_review_page_reports_stale_sender_instead_of_500(self):
-        a = self._announcement(from_email="gone@example.org")
-        resp = self.client.get(
-            reverse("email_review"), {"workflow": "announcement", "announcement": a.id},
-            follow=True)
-        self.assertContains(resp, "not an allowed sender")
+        send_simple("Hello", "Body", "x@example.com")
+        self.assertEqual(mail.outbox[-1].from_email, "club@example.org")

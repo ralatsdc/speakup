@@ -36,7 +36,6 @@ See `.env.example`. Key variables:
 | `DATABASE_URL` | Database connection string | SQLite |
 | `BREVO_API_KEY` | Brevo API key (production email) | — |
 | `DEFAULT_FROM_EMAIL` | Sender address for all outgoing email | `noreply@speakup.com` |
-| `ANNOUNCEMENT_SENDERS` | Extra addresses announcements can be sent from (comma-separated; `addr` or `Name <addr>`). Must be verified in Brevo. | `president@club.org, VP Ed <vped@club.org>` |
 | `SITE_URL` | Base URL used in email links | `http://127.0.0.1:8000` |
 | `ALLOWED_HOSTS` | Comma-separated allowed hosts | `*` in production |
 | `CSRF_TRUSTED_ORIGINS` | Comma-separated trusted origins | `*.railway.app` |

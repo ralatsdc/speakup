@@ -1,4 +1,6 @@
 from django.conf import settings
+from email.utils import formataddr
+
 from django.db import models
 
 from .utils import send_announcement
@@ -30,13 +32,6 @@ class Announcement(models.Model):
         help_text="Used only when the audience is “Selected Members”. Unlike "
         "the predefined audiences, guests can be picked here.",
     )
-    # Blank means settings.DEFAULT_FROM_EMAIL. Free text rather than model
-    # choices because the allowed list lives in settings.ANNOUNCEMENT_SENDERS
-    # (it tracks what Brevo has verified); the admin form restricts the pick
-    # and ``emails.resolve_sender`` re-checks at send time.
-    from_email = models.CharField(
-        "Send from", max_length=254, blank=True,
-        help_text="Leave blank to use the club’s default sender.")
     created_at = models.DateTimeField(auto_now_add=True)
     sent_at = models.DateTimeField(null=True, blank=True)
 
@@ -45,3 +40,35 @@ class Announcement(models.Model):
 
     def send(self):
         return send_announcement(self)
+
+
+class Sender(models.Model):
+    """An address officers can choose to send club email from.
+
+    The club's default sender is still ``settings.DEFAULT_FROM_EMAIL`` — it is
+    always offered and is what automatic mail (sign-in links, welcome, guides)
+    uses. Rows here are the *additional* choices on the review-before-send
+    page. Each address must be on a domain or sender verified in Brevo; this
+    table can't check that, so an unverified one fails at delivery.
+    """
+
+    name = models.CharField(
+        max_length=100, blank=True,
+        help_text="Shown to recipients, e.g. “Speak Up Cambridge — President”.")
+    email = models.EmailField(
+        unique=True,
+        help_text="Must be verified in Brevo (on the authenticated domain), "
+        "or messages will fail or land in spam.")
+    is_active = models.BooleanField(
+        default=True, help_text="Untick to retire a sender without deleting it.")
+
+    class Meta:
+        ordering = ["name", "email"]
+
+    def __str__(self):
+        return self.header
+
+    @property
+    def header(self):
+        """The RFC 5322 From value, e.g. ``Name <addr>``."""
+        return formataddr((self.name, self.email)) if self.name else self.email

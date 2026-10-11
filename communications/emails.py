@@ -23,7 +23,7 @@ dispatches:
     }
 
 Builders produce a draft (no send). The subject/body templates are authored in
-Markdown. ``build_messages`` applies per-group subject/body overrides (the edits
+Markdown. ``build_messages`` applies per-group subject/body/sender overrides (the edits
 from the review form, falling back to the draft's own templates), renders each
 recipient's copy, and returns ``EmailMultiAlternatives`` objects carrying a
 clean plain-text body plus an HTML alternative rendered from the Markdown. The
@@ -41,28 +41,29 @@ from django.core.mail import EmailMultiAlternatives, get_connection
 _PLACEHOLDER = re.compile(r"\{(\w+)\}")
 
 
-def allowed_senders():
-    """Addresses an announcement may be sent from: the default first, then
-    ``settings.ANNOUNCEMENT_SENDERS`` (de-duplicated, order kept)."""
-    seen = []
-    for s in [settings.DEFAULT_FROM_EMAIL, *settings.ANNOUNCEMENT_SENDERS]:
-        if s not in seen:
-            seen.append(s)
-    return seen
+def default_sender():
+    return settings.DEFAULT_FROM_EMAIL
 
 
-def resolve_sender(from_email):
-    """The From header for ``from_email`` ('' -> the default). Raises
-    ``ValueError`` for an address that is no longer on the allowed list, so a
-    stale choice fails loudly on the review page instead of mailing from an
-    unverified address."""
-    if not from_email:
-        return settings.DEFAULT_FROM_EMAIL
-    if from_email not in allowed_senders():
-        raise ValueError(
-            f"“{from_email}” is not an allowed sender. Pick another sender on "
-            "the announcement.")
-    return from_email
+def active_senders():
+    from .models import Sender
+
+    return list(Sender.objects.filter(is_active=True))
+
+
+def resolve_sender(sender_id):
+    """The From header for a ``Sender`` pk ('' / None -> the default). Raises
+    ``ValueError`` if it is missing or retired, so a stale choice fails
+    loudly instead of mailing from an address we no longer vouch for."""
+    if not sender_id:
+        return default_sender()
+    from .models import Sender
+
+    try:
+        return Sender.objects.get(pk=sender_id, is_active=True).header
+    except (Sender.DoesNotExist, ValueError):
+        raise ValueError("The chosen sender is no longer available. "
+                         "Pick another “Send from” address.")
 
 
 def render(template, context):
@@ -116,8 +117,8 @@ def build_messages(groups, edits=None):
     edits = edits or {}
     out = []
     for group in groups:
-        sender = group.get("from_email") or settings.DEFAULT_FROM_EMAIL
         override = edits.get(group["key"], {})
+        sender = resolve_sender(override.get("sender"))
         subject_t = override.get("subject") or group["subject"]
         body_t = override.get("body") or group["body"]
         for r in group["recipients"]:
@@ -215,7 +216,6 @@ def build_announcement_draft(announcements, back_url=""):
             "body": announcement.body,
             "placeholders": ["first_name"],
             "recipients": recipients,
-            "from_email": resolve_sender(announcement.from_email),
         })
 
     title = (
