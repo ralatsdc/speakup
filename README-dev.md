@@ -121,7 +121,7 @@ The largest app. Contains the data model for meeting templates and instances, pl
 
 - `Announcement` model with subject, body, audience (all/officers/guests), timestamps
 - `send_announcement()` in `communications/utils.py` filters recipients by audience and dispatches email
-- Admin has a custom "Send Announcement" button and a bulk send action
+- Admin has a custom "Save & review to send…" button and a bulk send action
 
 ### core
 
