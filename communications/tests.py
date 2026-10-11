@@ -2,13 +2,14 @@ from datetime import timedelta
 from unittest.mock import patch
 
 from django.core import mail
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
 from meetings.models import Meeting, MeetingRole, Role
 from members.models import User
 from .models import Announcement
+from .utils import send_announcement
 
 
 class EmailReviewTest(TestCase):
@@ -593,3 +594,66 @@ class EmojiRoundTripTest(TestCase):
             str(make_header(decode_header(parsed["Subject"]))),
             "🎤 Meeting Wednesday",
         )
+
+
+@override_settings(
+    DEFAULT_FROM_EMAIL="club@example.org",
+    ANNOUNCEMENT_SENDERS=["VP Ed <vped@example.org>", "president@example.org"],
+)
+class AnnouncementSenderTest(TestCase):
+    """#69: an announcement can go out from any address on the allowed list;
+    anything else is refused before it reaches Brevo."""
+
+    def setUp(self):
+        self.staff = User.objects.create_superuser("boss", "boss@example.com", "pw")
+        self.member = User.objects.create_user(
+            "m", "m@example.com", "pw", first_name="Em")
+        self.client.force_login(self.staff)
+
+    def _announcement(self, **kw):
+        return Announcement.objects.create(
+            subject="Hi", body="Body", audience="all", **kw)
+
+    def test_blank_sender_uses_default(self):
+        send_announcement(self._announcement())
+        self.assertEqual(mail.outbox[0].from_email, "club@example.org")
+
+    def test_chosen_sender_is_used(self):
+        send_announcement(self._announcement(from_email="VP Ed <vped@example.org>"))
+        self.assertEqual(mail.outbox[0].from_email, "VP Ed <vped@example.org>")
+
+    def test_disallowed_sender_is_refused_and_nothing_sent(self):
+        with self.assertRaises(ValueError):
+            send_announcement(self._announcement(from_email="evil@elsewhere.com"))
+        self.assertFalse(mail.outbox)
+
+    def test_form_offers_default_plus_configured_senders(self):
+        from communications.forms import AnnouncementAdminForm
+
+        choices = [c[0] for c in AnnouncementAdminForm().fields["from_email"].choices]
+        self.assertEqual(
+            choices,
+            ["", "club@example.org", "VP Ed <vped@example.org>",
+             "president@example.org"])
+
+    def test_form_rejects_unlisted_sender(self):
+        from communications.forms import AnnouncementAdminForm
+
+        form = AnnouncementAdminForm(data={
+            "subject": "Hi", "body": "x", "audience": "all",
+            "from_email": "evil@elsewhere.com"})
+        self.assertFalse(form.is_valid())
+        self.assertIn("from_email", form.errors)
+
+    def test_review_page_shows_sender(self):
+        a = self._announcement(from_email="president@example.org")
+        resp = self.client.get(
+            reverse("email_review"), {"workflow": "announcement", "announcement": a.id})
+        self.assertContains(resp, "From: <strong>president@example.org</strong>")
+
+    def test_review_page_reports_stale_sender_instead_of_500(self):
+        a = self._announcement(from_email="gone@example.org")
+        resp = self.client.get(
+            reverse("email_review"), {"workflow": "announcement", "announcement": a.id},
+            follow=True)
+        self.assertContains(resp, "not an allowed sender")

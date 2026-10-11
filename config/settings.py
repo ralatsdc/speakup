@@ -209,6 +209,14 @@ else:
 DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "amy.leclair@thenutcake.net")
 SERVER_EMAIL = DEFAULT_FROM_EMAIL
 
+# Addresses an announcement may be sent from (comma-separated, each either
+# "addr@domain" or "Display Name <addr@domain>"; display names can't contain
+# commas). Every one must be on a domain/sender verified in Brevo, or delivery
+# will fail or land in spam. DEFAULT_FROM_EMAIL is always offered, first.
+ANNOUNCEMENT_SENDERS = [
+    s.strip() for s in os.getenv("ANNOUNCEMENT_SENDERS", "").split(",") if s.strip()
+]
+
 SITE_URL = os.getenv("SITE_URL", "http://127.0.0.1:8000")
 
 ZOOM_ACCOUNT_ID = os.getenv("ZOOM_ACCOUNT_ID", "")

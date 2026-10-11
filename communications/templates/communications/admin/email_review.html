@@ -60,6 +60,7 @@
                 <div class="group" data-key="{{ group.key }}"
                      data-context="{{ group.sample_context_json }}">
                     <h2>{{ group.label }}</h2>
+                    {% if group.from_email %}<p class="placeholders">From: <strong>{{ group.from_email }}</strong></p>{% endif %}
 
                     <label for="subj_{{ group.key }}">Subject</label>
                     <input type="text" id="subj_{{ group.key }}" name="subject_{{ group.key }}"

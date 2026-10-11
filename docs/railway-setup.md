@@ -44,6 +44,7 @@ deploy:
 | `SITE_URL` | Public origin used for email links. |
 | `BREVO_API_KEY` | Brevo → SMTP & API → API Keys. |
 | `DEFAULT_FROM_EMAIL` | Real, monitored mailbox on the Brevo-authenticated domain (replies land here). |
+| `ANNOUNCEMENT_SENDERS` | Optional. Comma-separated extra addresses officers can pick when sending an announcement (`addr` or `Name <addr>`). Each must be on the Brevo-authenticated domain. |
 | `AWS_STORAGE_BUCKET_NAME` | See section 3. Omit if you're not using S3 yet. |
 | `AWS_S3_REGION_NAME` | e.g. `us-east-1`. |
 | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | IAM user credentials from section 3. |

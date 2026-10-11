@@ -41,6 +41,30 @@ from django.core.mail import EmailMultiAlternatives, get_connection
 _PLACEHOLDER = re.compile(r"\{(\w+)\}")
 
 
+def allowed_senders():
+    """Addresses an announcement may be sent from: the default first, then
+    ``settings.ANNOUNCEMENT_SENDERS`` (de-duplicated, order kept)."""
+    seen = []
+    for s in [settings.DEFAULT_FROM_EMAIL, *settings.ANNOUNCEMENT_SENDERS]:
+        if s not in seen:
+            seen.append(s)
+    return seen
+
+
+def resolve_sender(from_email):
+    """The From header for ``from_email`` ('' -> the default). Raises
+    ``ValueError`` for an address that is no longer on the allowed list, so a
+    stale choice fails loudly on the review page instead of mailing from an
+    unverified address."""
+    if not from_email:
+        return settings.DEFAULT_FROM_EMAIL
+    if from_email not in allowed_senders():
+        raise ValueError(
+            f"“{from_email}” is not an allowed sender. Pick another sender on "
+            "the announcement.")
+    return from_email
+
+
 def render(template, context):
     r"""Substitute ``{name}`` tokens from ``context``; missing keys -> ''.
     Stray braces that don't match ``{\w+}`` are left untouched."""
@@ -90,9 +114,9 @@ def build_messages(groups, edits=None):
     alternative), applying ``edits`` (``{group_key: {"subject": ..., "body":
     ...}}``) over the defaults."""
     edits = edits or {}
-    sender = settings.DEFAULT_FROM_EMAIL
     out = []
     for group in groups:
+        sender = group.get("from_email") or settings.DEFAULT_FROM_EMAIL
         override = edits.get(group["key"], {})
         subject_t = override.get("subject") or group["subject"]
         body_t = override.get("body") or group["body"]
@@ -191,6 +215,7 @@ def build_announcement_draft(announcements, back_url=""):
             "body": announcement.body,
             "placeholders": ["first_name"],
             "recipients": recipients,
+            "from_email": resolve_sender(announcement.from_email),
         })
 
     title = (

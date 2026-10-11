@@ -30,6 +30,13 @@ class Announcement(models.Model):
         help_text="Used only when the audience is “Selected Members”. Unlike "
         "the predefined audiences, guests can be picked here.",
     )
+    # Blank means settings.DEFAULT_FROM_EMAIL. Free text rather than model
+    # choices because the allowed list lives in settings.ANNOUNCEMENT_SENDERS
+    # (it tracks what Brevo has verified); the admin form restricts the pick
+    # and ``emails.resolve_sender`` re-checks at send time.
+    from_email = models.CharField(
+        "Send from", max_length=254, blank=True,
+        help_text="Leave blank to use the club’s default sender.")
     created_at = models.DateTimeField(auto_now_add=True)
     sent_at = models.DateTimeField(null=True, blank=True)
 
