@@ -687,3 +687,28 @@ class AnnouncementSendFlowUiTest(TestCase):
             {"workflow": "announcement", "announcement": self.announcement.id})
         self.assertContains(resp, '<input type="submit" class="default"')
         self.assertContains(resp, "email")
+
+
+class OfficerSenderAccessTest(TestCase):
+    """Officers (not just superusers) can manage Senders and pick one."""
+
+    def setUp(self):
+        self.officer = User.objects.create_user(
+            "off", "off@example.com", "pw", is_officer=True)
+        self.client.force_login(self.officer)
+
+    def test_officer_can_open_and_add_senders_in_admin(self):
+        self.assertEqual(
+            self.client.get(reverse("admin:communications_sender_changelist")).status_code,
+            200)
+        resp = self.client.post(reverse("admin:communications_sender_add"), {
+            "name": "Pres", "email": "pres@example.org", "is_active": "on"})
+        self.assertEqual(resp.status_code, 302)
+        self.assertTrue(Sender.objects.filter(email="pres@example.org").exists())
+
+    def test_officer_sees_senders_on_review_page(self):
+        Sender.objects.create(name="Pres", email="pres@example.org")
+        ann = Announcement.objects.create(subject="Hi", body="B", audience="all")
+        resp = self.client.get(reverse("email_review"), {
+            "workflow": "announcement", "announcement": ann.id})
+        self.assertContains(resp, "Pres &lt;pres@example.org&gt;")
