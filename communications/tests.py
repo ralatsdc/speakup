@@ -712,3 +712,28 @@ class OfficerSenderAccessTest(TestCase):
         resp = self.client.get(reverse("email_review"), {
             "workflow": "announcement", "announcement": ann.id})
         self.assertContains(resp, "Pres &lt;pres@example.org&gt;")
+
+
+class AnnouncementReviewButtonTest(TestCase):
+    """The 'Save & review to send' button must route to the review page from
+    the add form as well as the change form (it used to only save on add)."""
+
+    def setUp(self):
+        self.staff = User.objects.create_superuser("boss", "boss@example.com", "pw")
+        self.client.force_login(self.staff)
+
+    def test_add_form_button_saves_and_goes_to_review(self):
+        resp = self.client.post(reverse("admin:communications_announcement_add"), {
+            "subject": "Hi", "body": "Body", "audience": "all",
+            "_send-announcement": "Save & review to send…"})
+        ann = Announcement.objects.get(subject="Hi")
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn(reverse("email_review"), resp["Location"])
+        self.assertIn(f"announcement={ann.id}", resp["Location"])
+        self.assertFalse(mail.outbox)
+
+    def test_plain_save_on_add_still_returns_to_list(self):
+        resp = self.client.post(reverse("admin:communications_announcement_add"), {
+            "subject": "Hi", "body": "Body", "audience": "all", "_save": "Save"})
+        self.assertRedirects(
+            resp, reverse("admin:communications_announcement_changelist"))
