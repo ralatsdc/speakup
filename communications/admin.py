@@ -5,7 +5,7 @@ from django.http import HttpResponseRedirect
 from django.urls import reverse
 
 from .forms import AnnouncementAdminForm
-from .models import Announcement
+from .models import Announcement, Sender
 
 
 @admin.register(Announcement)
@@ -63,3 +63,12 @@ class AnnouncementAdmin(admin.ModelAdmin):
                 {"workflow": "announcement", "announcement": obj.id})
             return HttpResponseRedirect(url)
         return super().response_change(request, obj)
+
+
+@admin.register(Sender)
+class SenderAdmin(admin.ModelAdmin):
+    """Extra “Send from” choices for the review-before-send page. The default
+    sender (``DEFAULT_FROM_EMAIL``) is always offered and isn't listed here."""
+
+    list_display = ("email", "name", "is_active")
+    list_filter = ("is_active",)

@@ -23,7 +23,7 @@ dispatches:
     }
 
 Builders produce a draft (no send). The subject/body templates are authored in
-Markdown. ``build_messages`` applies per-group subject/body overrides (the edits
+Markdown. ``build_messages`` applies per-group subject/body/sender overrides (the edits
 from the review form, falling back to the draft's own templates), renders each
 recipient's copy, and returns ``EmailMultiAlternatives`` objects carrying a
 clean plain-text body plus an HTML alternative rendered from the Markdown. The
@@ -39,6 +39,31 @@ from django.conf import settings
 from django.core.mail import EmailMultiAlternatives, get_connection
 
 _PLACEHOLDER = re.compile(r"\{(\w+)\}")
+
+
+def default_sender():
+    return settings.DEFAULT_FROM_EMAIL
+
+
+def active_senders():
+    from .models import Sender
+
+    return list(Sender.objects.filter(is_active=True))
+
+
+def resolve_sender(sender_id):
+    """The From header for a ``Sender`` pk ('' / None -> the default). Raises
+    ``ValueError`` if it is missing or retired, so a stale choice fails
+    loudly instead of mailing from an address we no longer vouch for."""
+    if not sender_id:
+        return default_sender()
+    from .models import Sender
+
+    try:
+        return Sender.objects.get(pk=sender_id, is_active=True).header
+    except (Sender.DoesNotExist, ValueError):
+        raise ValueError("The chosen sender is no longer available. "
+                         "Pick another “Send from” address.")
 
 
 def render(template, context):
@@ -90,10 +115,10 @@ def build_messages(groups, edits=None):
     alternative), applying ``edits`` (``{group_key: {"subject": ..., "body":
     ...}}``) over the defaults."""
     edits = edits or {}
-    sender = settings.DEFAULT_FROM_EMAIL
     out = []
     for group in groups:
         override = edits.get(group["key"], {})
+        sender = resolve_sender(override.get("sender"))
         subject_t = override.get("subject") or group["subject"]
         body_t = override.get("body") or group["body"]
         for r in group["recipients"]:

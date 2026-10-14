@@ -2,13 +2,13 @@ from datetime import timedelta
 from unittest.mock import patch
 
 from django.core import mail
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
 from meetings.models import Meeting, MeetingRole, Role
 from members.models import User
-from .models import Announcement
+from .models import Announcement, Sender
 
 
 class EmailReviewTest(TestCase):
@@ -595,6 +595,74 @@ class EmojiRoundTripTest(TestCase):
         )
 
 
+@override_settings(DEFAULT_FROM_EMAIL="club@example.org")
+class SenderChoiceTest(TestCase):
+    """#69: every review-before-send workflow can pick a sender; the default
+    (and all automatic mail) stays DEFAULT_FROM_EMAIL."""
+
+    def setUp(self):
+        self.staff = User.objects.create_superuser("boss", "boss@example.com", "pw")
+        self.client.force_login(self.staff)
+        self.url = reverse("email_review")
+        self.vped = Sender.objects.create(name="VP Ed", email="vped@example.org")
+        self.retired = Sender.objects.create(
+            email="old@example.org", is_active=False)
+        self.ann = Announcement.objects.create(
+            subject="Hi", body="Body", audience="all")
+        User.objects.create_user("m", "m@example.com", "pw", first_name="Em")
+
+    def _post(self, **extra):
+        return self.client.post(self.url, {
+            "workflow": "announcement", "announcements": self.ann.id, **extra})
+
+    def test_sender_header_formats_name_and_bare_address(self):
+        self.assertEqual(self.vped.header, "VP Ed <vped@example.org>")
+        self.assertEqual(self.retired.header, "old@example.org")
+
+    def test_review_page_offers_default_and_active_senders_only(self):
+        resp = self.client.get(self.url, {
+            "workflow": "announcement", "announcement": self.ann.id})
+        self.assertContains(resp, "club@example.org (default)")
+        self.assertContains(resp, "VP Ed &lt;vped@example.org&gt;")
+        self.assertNotContains(resp, "old@example.org")
+
+    def test_no_choice_uses_default(self):
+        self._post()
+        self.assertEqual(mail.outbox[0].from_email, "club@example.org")
+
+    def test_chosen_sender_is_used(self):
+        self._post(**{f"sender_ann{self.ann.id}": self.vped.pk})
+        self.assertEqual(mail.outbox[0].from_email, "VP Ed <vped@example.org>")
+
+    def test_retired_or_bogus_sender_is_refused_and_nothing_sent(self):
+        for bad in (self.retired.pk, 99999, "abc"):
+            resp = self._post(**{f"sender_ann{self.ann.id}": bad})
+            self.assertEqual(resp.status_code, 302)
+        self.assertFalse(mail.outbox)
+        self.ann.refresh_from_db()
+        self.assertIsNone(self.ann.sent_at)
+
+    def test_meeting_workflow_can_pick_sender_too(self):
+        role = Role.objects.create(name="Toastmaster")
+        m = Meeting.objects.create(date=timezone.now() + timedelta(days=3))
+        alice = User.objects.create_user(
+            "alice", "alice@example.com", "pw", first_name="Alice")
+        MeetingRole.objects.create(meeting=m, role=role, user=alice)
+        self.client.post(self.url, {
+            "workflow": "reminders", "meeting": m.id,
+            "sender_assignees": self.vped.pk})
+        self.assertTrue(mail.outbox)
+        self.assertTrue(all(
+            msg.from_email == "VP Ed <vped@example.org>" for msg in mail.outbox
+            if "alice@example.com" in msg.to))
+
+    def test_automatic_mail_stays_on_default(self):
+        from communications.emails import send_simple
+
+        send_simple("Hello", "Body", "x@example.com")
+        self.assertEqual(mail.outbox[-1].from_email, "club@example.org")
+
+
 class AnnouncementSendFlowUiTest(TestCase):
     """#70: the button names what it does, and the review page's Send is a
     real submit input (Django admin only paints input[type=submit].default,
@@ -619,3 +687,28 @@ class AnnouncementSendFlowUiTest(TestCase):
             {"workflow": "announcement", "announcement": self.announcement.id})
         self.assertContains(resp, '<input type="submit" class="default"')
         self.assertContains(resp, "email")
+
+
+class OfficerSenderAccessTest(TestCase):
+    """Officers (not just superusers) can manage Senders and pick one."""
+
+    def setUp(self):
+        self.officer = User.objects.create_user(
+            "off", "off@example.com", "pw", is_officer=True)
+        self.client.force_login(self.officer)
+
+    def test_officer_can_open_and_add_senders_in_admin(self):
+        self.assertEqual(
+            self.client.get(reverse("admin:communications_sender_changelist")).status_code,
+            200)
+        resp = self.client.post(reverse("admin:communications_sender_add"), {
+            "name": "Pres", "email": "pres@example.org", "is_active": "on"})
+        self.assertEqual(resp.status_code, 302)
+        self.assertTrue(Sender.objects.filter(email="pres@example.org").exists())
+
+    def test_officer_sees_senders_on_review_page(self):
+        Sender.objects.create(name="Pres", email="pres@example.org")
+        ann = Announcement.objects.create(subject="Hi", body="B", audience="all")
+        resp = self.client.get(reverse("email_review"), {
+            "workflow": "announcement", "announcement": ann.id})
+        self.assertContains(resp, "Pres &lt;pres@example.org&gt;")

@@ -61,6 +61,12 @@
                      data-context="{{ group.sample_context_json }}">
                     <h2>{{ group.label }}</h2>
 
+                    <label for="sender_{{ group.key }}">Send from</label>
+                    <select id="sender_{{ group.key }}" name="sender_{{ group.key }}">
+                        <option value="">{{ default_sender }} (default)</option>
+                        {% for s in senders %}<option value="{{ s.pk }}">{{ s.header }}</option>{% endfor %}
+                    </select>
+
                     <label for="subj_{{ group.key }}">Subject</label>
                     <input type="text" id="subj_{{ group.key }}" name="subject_{{ group.key }}"
                            value="{{ group.subject }}"
