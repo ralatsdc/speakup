@@ -206,7 +206,7 @@ else:
         "BREVO_API_KEY": os.getenv("BREVO_API_KEY"),
     }
 
-DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "amy.leclair@thenutcake.net")
+DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "amy@speak-up-cambridge.org")
 SERVER_EMAIL = DEFAULT_FROM_EMAIL
 
 SITE_URL = os.getenv("SITE_URL", "http://127.0.0.1:8000")
