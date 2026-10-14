@@ -55,14 +55,24 @@ class AnnouncementAdmin(admin.ModelAdmin):
             [("workflow", "announcement")] + [("announcement", i) for i in ids])
         return HttpResponseRedirect(url)
 
-    def response_change(self, request, obj):
-        """The 'Send Announcement' button routes to the review-before-send page
-        instead of dispatching immediately."""
+    def _review_redirect(self, request, obj):
+        """The 'Save & review to send' button routes to the review-before-send
+        page instead of dispatching immediately. None if it wasn't pressed."""
         if "_send-announcement" in request.POST:
             url = reverse("email_review") + "?" + urlencode(
                 {"workflow": "announcement", "announcement": obj.id})
             return HttpResponseRedirect(url)
-        return super().response_change(request, obj)
+        return None
+
+    def response_add(self, request, obj, post_url_continue=None):
+        # The button is on the add form too; without this it saved and fell
+        # back to the changelist like a plain Save.
+        return self._review_redirect(request, obj) or super().response_add(
+            request, obj, post_url_continue)
+
+    def response_change(self, request, obj):
+        return self._review_redirect(request, obj) or super().response_change(
+            request, obj)
 
 
 @admin.register(Sender)
