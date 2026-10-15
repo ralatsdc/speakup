@@ -147,10 +147,76 @@ appears under `role_guides/` in the S3 console.
 
 ## 4. Domain and TLS
 
-Railway issues a `*.up.railway.app` subdomain automatically. To bind a
-custom domain, add it under **Settings → Domains** and set the CNAME at
-your registrar. Update `ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS`, and
-`SITE_URL` to include the new domain.
+Railway issues a `*.up.railway.app` subdomain automatically. The club's
+production address is **`app.speak-up-cambridge.org`** (domain registered and
+DNS hosted at Dreamhost). To bind a custom domain:
+
+### 4.1 Pick a subdomain, not the bare domain
+
+Use a subdomain (`app.`, `members.`). It needs a plain CNAME. Registrars like
+Dreamhost can't put a CNAME on the bare domain (`example.org`), which would
+need a workaround. Leave the existing mail records (MX, and the SPF/DKIM TXT
+records Brevo asks for) alone; they are separate entries from the ones below.
+
+### 4.2 Add the domain in Railway
+
+Service → **Settings → Domains → Custom Domain**, enter the hostname. Railway
+shows two records, for example:
+
+| Type | Name | Value |
+| --- | --- | --- |
+| CNAME | `app` | `<id>.up.railway.app` |
+| TXT | `_railway-verify.app` | `railway-verify=<token>` |
+
+The CNAME points the hostname at Railway. The TXT proves you own the domain;
+Railway won't issue a certificate or serve traffic until it can read it.
+
+### 4.3 Add the records at Dreamhost
+
+Domains → Manage Domains → **DNS** → Add Record, once per record.
+
+- Enter only the part left of the domain in **Name**: `app` and
+  `_railway-verify.app`. Entering the full hostname creates a record at
+  `app.speak-up-cambridge.org.speak-up-cambridge.org` and verification never
+  succeeds.
+- TXT value goes in as shown, **without** quotation marks.
+- Dreamhost rejects a CNAME if an A or CNAME already exists for that name.
+
+Check what the internet sees (no need to wait for Railway):
+
+```bash
+dig +short CNAME app.speak-up-cambridge.org
+dig +short TXT _railway-verify.app.speak-up-cambridge.org
+```
+
+Railway marks the domain verified within minutes, then issues a Let's Encrypt
+certificate (usually 5–30 minutes). Until then, HTTPS fails with
+`SSL: no alternative certificate subject name matches target hostname`. That is
+the expected waiting state, not a misconfiguration. Check readiness with
+`curl -sSI https://<hostname> | head -3`.
+
+If the browser keeps warning after the certificate is valid (`openssl s_client`
+or a private window shows it's fine), it's cached state from the waiting period.
+Restart the browser or clear site data for that host.
+
+### 4.4 Update the app's variables — in this order
+
+1. **`CSRF_TRUSTED_ORIGINS`** — add `https://app.speak-up-cambridge.org`.
+   Setting this variable *replaces* the built-in Railway defaults, so keep
+   those in the list too:
+   `https://app.speak-up-cambridge.org,https://*.up.railway.app,https://*.railway.app`.
+   Without it, sign-in and every form post from the new host fail with a CSRF
+   error.
+2. **`ALLOWED_HOSTS`** — if unset, the app accepts any host (default `*`) and
+   needs no change. If you set it, include both the custom and Railway hosts.
+3. Test on the new host (sign in, save a form). The old Railway address keeps
+   working as a fallback.
+4. **`SITE_URL`** — switch this *last*, to `https://app.speak-up-cambridge.org`.
+   It is the origin used in links inside emails (sign-in links, reminders), so
+   flipping it before the certificate works sends members dead links. Then
+   request a sign-in link and confirm the link and the From address.
+
+Each variable change triggers a redeploy; wait for it to finish before testing.
 
 ## 5. First deploy
 
