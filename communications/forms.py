@@ -1,8 +1,37 @@
+import json
+
 from django import forms
 
 from core.widgets import EmojiTextarea, EmojiTextInput
 
-from .models import Announcement
+from .models import Announcement, EmailTemplate
+
+
+class TemplatePicker(forms.Select):
+    """A select that carries every template's text, so ``template-picker.js``
+    can fill in the subject and body without reloading the page (which would
+    lose the audience and recipient selections)."""
+
+    class Media:
+        js = ("communications/template-picker.js",)
+
+    def get_context(self, name, value, attrs):
+        context = super().get_context(name, value, attrs)
+        context["widget"]["attrs"]["data-email-templates"] = json.dumps({
+            str(t.pk): {"subject": t.subject, "body": t.body}
+            for t in EmailTemplate.objects.all()
+        })
+        return context
+
+
+class EmailTemplateAdminForm(forms.ModelForm):
+    class Meta:
+        model = EmailTemplate
+        fields = "__all__"
+        widgets = {
+            "subject": EmojiTextInput,
+            "body": EmojiTextarea,
+        }
 
 
 class AnnouncementAdminForm(forms.ModelForm):
@@ -17,6 +46,16 @@ class AnnouncementAdminForm(forms.ModelForm):
     many-to-many isn't readable until the row exists — on an add form the
     picked recipients are only available here, in ``cleaned_data``.
     """
+
+    # Not stored: picking one only copies its text into the fields below.
+    template = forms.ModelChoiceField(
+        queryset=EmailTemplate.objects.all(),
+        required=False,
+        label="Start from template",
+        widget=TemplatePicker,
+        help_text="Copies the template’s subject and body into the fields "
+        "below, where you can edit them.",
+    )
 
     class Meta:
         model = Announcement

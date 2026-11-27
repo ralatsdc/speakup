@@ -1,6 +1,7 @@
 from datetime import timedelta
 from unittest.mock import patch
 
+from django.contrib.auth.models import Permission
 from django.core import mail
 from django.test import TestCase, override_settings
 from django.urls import reverse
@@ -8,7 +9,7 @@ from django.utils import timezone
 
 from meetings.models import Meeting, MeetingRole, Role
 from members.models import User
-from .models import Announcement, Sender
+from .models import Announcement, EmailTemplate, Sender
 
 
 class EmailReviewTest(TestCase):
@@ -737,3 +738,96 @@ class AnnouncementReviewButtonTest(TestCase):
             "subject": "Hi", "body": "Body", "audience": "all", "_save": "Save"})
         self.assertRedirects(
             resp, reverse("admin:communications_announcement_changelist"))
+
+
+class EmailTemplateTest(TestCase):
+    """Officers keep reusable text, start announcements from it, and save
+    announcements back as templates. Run as an officer, not a superuser, so
+    the permissions migration is exercised too."""
+
+    def setUp(self):
+        self.officer = User.objects.create_user(
+            "tmpl", "tmpl@example.com", "pw", is_officer=True)
+        self.client.force_login(self.officer)
+        self.changelist = reverse("admin:communications_announcement_changelist")
+
+    def _save_as_template(self, *announcements):
+        return self.client.post(self.changelist, {
+            "action": "save_as_template",
+            "_selected_action": [a.pk for a in announcements],
+        }, follow=True)
+
+    def test_officer_can_add_a_template_with_emoji_fields(self):
+        url = reverse("admin:communications_emailtemplate_add")
+        html = self.client.get(url).content.decode()
+        self.assertEqual(html.count("data-emoji-picker-src"), 2)
+        resp = self.client.post(url, {
+            "name": "Welcome", "subject": "Hi 🎉", "body": "Hi {first_name}"})
+        self.assertEqual(resp.status_code, 302)
+        self.assertTrue(EmailTemplate.objects.filter(name="Welcome").exists())
+
+    def test_announcement_form_offers_templates_and_their_text(self):
+        template = EmailTemplate.objects.create(
+            name="Welcome", subject='Say "hi"', body="</script> {first_name}")
+        resp = self.client.get(reverse("admin:communications_announcement_add"))
+        form = resp.context["adminform"].form
+        self.assertEqual(list(form.fields)[0:1], ["template"])
+        widget = str(form["template"])
+        self.assertIn("data-email-templates", widget)
+        self.assertNotIn("</script>", widget)  # escaped inside the attribute
+        self.assertIn(f'value="{template.pk}"', widget)
+        self.assertRegex(resp.content.decode(),
+                         r"communications/template-picker(\.\w+)?\.js")
+
+    def test_picking_a_template_does_not_override_submitted_text(self):
+        """The copy happens in the browser; the server saves what was typed."""
+        template = EmailTemplate.objects.create(
+            name="Welcome", subject="Template subject", body="Template body")
+        resp = self.client.post(
+            reverse("admin:communications_announcement_add"),
+            {"template": template.pk, "subject": "Edited", "body": "Mine",
+             "audience": "all"})
+        self.assertEqual(resp.status_code, 302)
+        announcement = Announcement.objects.get()
+        self.assertEqual((announcement.subject, announcement.body),
+                         ("Edited", "Mine"))
+
+    def test_view_only_user_can_open_an_announcement(self):
+        viewer = User.objects.create_user(
+            "viewer", "viewer@example.com", "pw")
+        viewer.user_permissions.add(
+            Permission.objects.get(codename="view_announcement"))
+        self.client.force_login(viewer)
+        # After login, and via update(): the officer-sync signal clears
+        # is_staff on every save, including the last_login one.
+        User.objects.filter(pk=viewer.pk).update(is_staff=True)
+        announcement = Announcement.objects.create(subject="S", body="B")
+        resp = self.client.get(reverse(
+            "admin:communications_announcement_change", args=[announcement.pk]))
+        self.assertEqual(resp.status_code, 200)
+        self.assertNotContains(resp, "data-email-templates")
+        # Nor may a viewer create templates through the list action.
+        self._save_as_template(announcement)
+        self.assertFalse(EmailTemplate.objects.exists())
+
+    def test_save_as_template_copies_each_selection_without_sending(self):
+        a = Announcement.objects.create(subject="Dues", body="Pay {first_name}")
+        b = Announcement.objects.create(subject="Social", body="Join us")
+        resp = self._save_as_template(a, b)
+        self.assertContains(resp, "Saved template")
+        self.assertEqual(
+            list(EmailTemplate.objects.values_list("name", "subject", "body")),
+            [("Dues", "Dues", "Pay {first_name}"),
+             ("Social", "Social", "Join us")])
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_taken_names_get_a_suffix_within_the_length_limit(self):
+        announcement = Announcement.objects.create(subject="x" * 200, body="B")
+        names = [EmailTemplate.create_from(announcement).name for _ in range(3)]
+        self.assertEqual(names, ["x" * 200, "x" * 196 + " (2)",
+                                 "x" * 196 + " (3)"])
+
+    def test_deleting_a_template_leaves_announcements_alone(self):
+        announcement = Announcement.objects.create(subject="Dues", body="B")
+        EmailTemplate.create_from(announcement).delete()
+        self.assertTrue(Announcement.objects.filter(pk=announcement.pk).exists())
