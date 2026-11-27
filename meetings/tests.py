@@ -1139,8 +1139,8 @@ class ZoomIntegrationFlagTest(TestCase):
             reverse("admin:meetings_meeting_change", args=[self.meeting.pk])
         )
         self.assertEqual(response.status_code, 200)
-        self.assertNotContains(response, "Import Zoom Attendance")
-        self.assertNotContains(response, "Email Remote to Register")
+        self.assertNotContains(response, "Import Zoom attendance")
+        self.assertNotContains(response, "Review registration reminders")
 
     @override_settings(ZOOM_INTEGRATION_ENABLED=True)
     def test_buttons_visible_when_flag_on(self):
@@ -1148,8 +1148,8 @@ class ZoomIntegrationFlagTest(TestCase):
             reverse("admin:meetings_meeting_change", args=[self.meeting.pk])
         )
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Import Zoom Attendance")
-        self.assertContains(response, "Email Remote to Register")
+        self.assertContains(response, "Import Zoom attendance")
+        self.assertContains(response, "Review registration reminders")
 
     @override_settings(ZOOM_INTEGRATION_ENABLED=False)
     @patch("meetings.zoom.import_zoom_participants")

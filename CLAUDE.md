@@ -72,13 +72,34 @@ either way, and the app renders from one origin.
 
 `DEBUG` env var drives the dev/deploy split. When `DEBUG=False`: SSL redirect, secure cookies, Brevo email backend, WhiteNoise static compression. Database configured via `DATABASE_URL` (defaults to SQLite).
 
+### Admin buttons and links
+
+How a control looks shows what kind of action it is. Use Django admin's own
+styles; don't add per-feature colors or inline `style` colors.
+
+| Style | How | Meaning |
+|---|---|---|
+| Dark filled | `class="default"` | The main action, at most one per group. On edit pages that is Save |
+| Teal filled | plain `input[type=submit]`, or `<button class="button">` | Another action that changes something or leads to one, including controls that filter what's shown |
+| Gray filled | `class="exit"` | Leave without sending or recording anything (Cancel, Finish later) |
+| Red | Django's delete styles | Delete or destroy |
+| Text link | `<a>` | Only goes to another page |
+
+A button that only opens the review-before-send page is named "Review …" with
+an ellipsis, not "Send …".
+
+Prefer `input[type=submit]`. Admin doesn't style a bare `<button>`, even with
+`class="default"`, and `<button class="button">` renders smaller, so keep that
+for compact controls (Filter, Put back). `.exit` is currently defined only for the
+email pages, in `communications/admin/_email_styles.html`.
+
 ### Email
 
 Dev: console backend. Production: Brevo via `django-anymail`. Three workflows triggered from admin: meeting reminders, meeting feedback, announcements. All use `send_mass_mail()`.
 
 ### Admin Customizations
 
-- `MeetingAdmin` — Custom change form with "Send Email Reminders" and "Send Feedback Emails" buttons
+- `MeetingAdmin` — Custom change form with "Review reminders…" and "Review feedback emails…" buttons
 - `AttendanceAdmin` — Bulk action: "Convert selected guests to Users"
 - `AnnouncementAdmin` — Custom "Save & review to send…" button (opens the review page; sending happens there); "Start from template" picker and "Save as template" action (`EmailTemplate`); one-at-a-time progress column and read-only delivery history
 - `CustomUserAdmin` — CSV import/export, bulk make/remove guest/officer/active actions

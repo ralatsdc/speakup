@@ -505,6 +505,15 @@ class ActivityReportTest(TestCase):
         self.assertIn(f'name="role" value="{self.tm.pk}"', html)
         self.assertIn(f'name="role" value="{self.timer.pk}"', html)
 
+    def test_invite_button_is_the_styled_main_action(self):
+        self._upcoming_with_open_tm()
+        resp = self.client.get(reverse(
+            "admin:members_user_activity_report_detail", args=[self.bob.pk]))
+        # An input, so admin styles and sizes it like other main buttons.
+        self.assertContains(
+            resp, '<input type="submit" class="default" id="invite-button"')
+        self.assertContains(resp, "Review invitation…")
+
     def test_invite_disabled_without_upcoming(self):
         url = reverse("admin:members_user_activity_report_detail", args=[self.bob.pk])
         resp = self.client.get(url)

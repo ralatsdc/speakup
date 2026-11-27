@@ -113,7 +113,7 @@ The largest app. Contains the data model for meeting templates and instances, pl
 - `send_meeting_feedback(meeting)` — post-meeting: sends `admin_notes` to role holders, thank-you emails to guests
 
 **Admin customizations** (`meetings/admin.py`):
-- Meeting change form has custom buttons: "Send Email Reminders" and "Send Feedback Emails"
+- Meeting change form has custom buttons: "Review reminders…" and "Review feedback emails…"
 - Attendance admin has a bulk action: "Convert selected guests to Users"
 - MeetingRole admin has list-editable user and sort_order fields
 
