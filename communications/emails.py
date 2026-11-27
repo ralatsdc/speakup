@@ -85,12 +85,17 @@ _HTML_TEMPLATE = (
 )
 
 
+def to_html_fragment(text):
+    """Render Markdown ``text`` to HTML without a document around it, for
+    showing inside a page. Single newlines become ``<br>`` (``nl2br``) so
+    bodies authored as plain paragraphs keep their line breaks; ``extra``
+    covers links, lists, bold/italic, etc."""
+    return md.markdown(text or "", extensions=["extra", "nl2br", "sane_lists"])
+
+
 def to_html(text):
-    """Render Markdown ``text`` to a standalone HTML document. Single newlines
-    become ``<br>`` (``nl2br``) so bodies authored as plain paragraphs keep
-    their line breaks; ``extra`` covers links, lists, bold/italic, etc."""
-    inner = md.markdown(text or "", extensions=["extra", "nl2br", "sane_lists"])
-    return _HTML_TEMPLATE.format(inner=inner)
+    """Render Markdown ``text`` to the standalone HTML document we email."""
+    return _HTML_TEMPLATE.format(inner=to_html_fragment(text))
 
 
 def to_text(text):

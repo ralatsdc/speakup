@@ -20,7 +20,7 @@ from django.urls import reverse
 
 from . import individual
 from .emails import (active_senders, default_sender, render as render_template,
-                     to_html, total_recipients)
+                     to_html_fragment, total_recipients)
 from .models import Announcement, AnnouncementDelivery
 
 logger = logging.getLogger(__name__)
@@ -175,7 +175,9 @@ def _attach_previews(groups):
         g["preview_subject"] = render_template(g["subject"], ctx)
         # Server-rendered HTML for the first paint (and a no-JS fallback); the
         # client re-renders Markdown live as the body is edited.
-        g["preview_body_html"] = to_html(render_template(g["body"], ctx))
+        # A fragment: the email's own <body> tag, nested in the admin page,
+        # would restyle the whole page (unreadable in dark mode).
+        g["preview_body_html"] = to_html_fragment(render_template(g["body"], ctx))
 
 
 @staff_member_required

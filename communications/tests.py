@@ -892,6 +892,11 @@ class OneAtATimeSendTest(TestCase):
         # The announcement itself is untouched.
         self.assertEqual(self.ann.body, "Dear {first_name}")
 
+    def test_previews_do_not_nest_an_email_document_in_the_page(self):
+        for resp in (self._get(), self._bulk("get")):
+            self.assertContains(resp, "<p>Dear ")
+            self.assertEqual(resp.content.decode().count("<body"), 1)
+
     def test_button_styles_show_the_kind_of_action(self):
         html = self._get().content.decode()
         self.assertIn('class="default" name="_send"', html)
