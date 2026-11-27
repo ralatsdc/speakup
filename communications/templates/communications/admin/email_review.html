@@ -87,7 +87,7 @@
                 {# color on input[type=submit].default, so a <button> renders gray. #}
                 <input type="submit" class="default"
                        value="Send {{ total }} email{{ total|pluralize }} now">
-                <button type="submit" name="_cancel" value="1" class="cancel">Cancel</button>
+                <input type="submit" class="default" name="_cancel" value="Cancel">
             </div>
         </form>
     {% else %}

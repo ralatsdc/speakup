@@ -892,6 +892,15 @@ class OneAtATimeSendTest(TestCase):
         # The announcement itself is untouched.
         self.assertEqual(self.ann.body, "Dear {first_name}")
 
+    def test_finish_later_leaves_without_sending_or_recording(self):
+        resp = self.client.post(self.url, {
+            "announcement": self.ann.pk, "user": self.amy.pk,
+            "subject": "S", "body": "B", "_later": "Finish later"})
+        self.assertRedirects(resp, reverse(
+            "admin:communications_announcement_change", args=[self.ann.pk]))
+        self.assertFalse(mail.outbox)
+        self.assertFalse(AnnouncementDelivery.objects.exists())
+
     def test_chosen_sender_is_used_and_carries_forward(self):
         sender = Sender.objects.create(name="Pres", email="pres@example.org")
         resp = self._send(self.amy, sender=sender.pk)

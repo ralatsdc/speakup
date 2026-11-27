@@ -71,8 +71,8 @@
             <div class="actions">
                 <input type="submit" class="default" name="_send"
                        value="{% if is_last %}Send{% else %}Send &amp; next{% endif %}">
-                <button type="submit" name="_skip" value="1" class="cancel">Skip</button>
-                <a href="{{ back_url }}" class="cancel">Finish later</a>
+                <input type="submit" class="default" name="_skip" value="Skip">
+                <input type="submit" class="default" name="_later" value="Finish later">
                 <span class="help">Unsent changes to this message aren’t saved.</span>
             </div>
         {% elif announcement.sent_at %}

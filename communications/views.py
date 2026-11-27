@@ -239,6 +239,8 @@ def send_one_at_a_time(request):
     draft = None  # the officer's text, kept if a send fails
 
     if request.method == "POST":
+        if "_later" in request.POST:
+            return redirect(back_url)
         user_id = _int_or_none(request.POST.get("user"))
         try:
             if "_send" in request.POST:
