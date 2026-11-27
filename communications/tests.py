@@ -9,7 +9,7 @@ from django.utils import timezone
 
 from meetings.models import Meeting, MeetingRole, Role
 from members.models import User
-from .models import Announcement, EmailTemplate, Sender
+from .models import Announcement, AnnouncementDelivery, EmailTemplate, Sender
 
 
 class EmailReviewTest(TestCase):
@@ -831,3 +831,235 @@ class EmailTemplateTest(TestCase):
         announcement = Announcement.objects.create(subject="Dues", body="B")
         EmailTemplate.create_from(announcement).delete()
         self.assertTrue(Announcement.objects.filter(pk=announcement.pk).exists())
+
+
+class OneAtATimeSendTest(TestCase):
+    """Stepping through recipients. Run as an officer so real permissions
+    apply. The officer is a member, so is in the "all" audience too."""
+
+    def setUp(self):
+        self.officer = User.objects.create_user(
+            "zed", "zed@example.com", "pw", first_name="Zed", is_officer=True)
+        self.amy = User.objects.create_user(
+            "amy1", "amy1@example.com", "pw", first_name="Amy")
+        self.ben = User.objects.create_user(
+            "ben1", "ben1@example.com", "pw", first_name="Ben")
+        self.client.force_login(self.officer)
+        self.ann = Announcement.objects.create(
+            subject="Hi {first_name}", body="Dear {first_name}", audience="all")
+        self.url = reverse("email_each")
+
+    def _get(self):
+        return self.client.get(self.url, {"announcement": self.ann.pk})
+
+    def _post(self, action, user=None, **data):
+        data.update({"announcement": self.ann.pk, action: data.get(action, "1")})
+        if user:
+            data["user"] = user.pk
+        return self.client.post(self.url, data, follow=True)
+
+    def _send(self, user, subject="S", body="B", **data):
+        return self._post("_send", user, subject=subject, body=body, **data)
+
+    def _sent_to(self):
+        return [m.to[0] for m in mail.outbox]
+
+    def _bulk(self, method="post"):
+        return getattr(self.client, method)(reverse("email_review"), {
+            "workflow": "announcement", "announcement": self.ann.pk})
+
+    def test_first_screen_is_filled_in_for_the_first_name_in_order(self):
+        resp = self._get()
+        self.assertEqual(resp.context["current"]["name"], "Amy")
+        self.assertEqual(resp.context["group"]["subject"], "Hi Amy")
+        self.assertEqual(resp.context["group"]["body"], "Dear Amy")
+        self.assertContains(resp, "1 of 3")
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_send_uses_custom_text_records_it_and_advances(self):
+        resp = self._send(self.amy, "Just for you", "**Great** speech, {first_name}")
+        self.assertEqual(self._sent_to(), ["amy1@example.com"])
+        self.assertEqual(mail.outbox[0].subject, "Just for you")
+        self.assertEqual(mail.outbox[0].body, "Great speech, Amy")
+        delivery = AnnouncementDelivery.objects.get()
+        self.assertEqual(
+            (delivery.user, delivery.status, delivery.body, delivery.handled_by),
+            (self.amy, "sent", "Great speech, Amy", self.officer))
+        self.assertEqual(resp.context["current"]["name"], "Ben")
+        self.assertContains(resp, "2 of 3")
+        self.ann.refresh_from_db()
+        self.assertIsNone(self.ann.sent_at)
+        # The announcement itself is untouched.
+        self.assertEqual(self.ann.body, "Dear {first_name}")
+
+    def test_previews_do_not_nest_an_email_document_in_the_page(self):
+        for resp in (self._get(), self._bulk("get")):
+            self.assertContains(resp, "<p>Dear ")
+            self.assertEqual(resp.content.decode().count("<body"), 1)
+
+    def test_button_styles_show_the_kind_of_action(self):
+        html = self._get().content.decode()
+        self.assertIn('class="default" name="_send"', html)
+        self.assertIn('<input type="submit" name="_skip"', html)
+        self.assertIn('class="exit" name="_later"', html)
+        review = self._bulk("get").content.decode()
+        self.assertIn('class="exit" name="_cancel"', review)
+        self.assertContains(self._post("_skip", self.amy), 'class="button" name="_restore"')
+
+    def test_finish_later_leaves_without_sending_or_recording(self):
+        resp = self.client.post(self.url, {
+            "announcement": self.ann.pk, "user": self.amy.pk,
+            "subject": "S", "body": "B", "_later": "Finish later"})
+        self.assertRedirects(resp, reverse(
+            "admin:communications_announcement_change", args=[self.ann.pk]))
+        self.assertFalse(mail.outbox)
+        self.assertFalse(AnnouncementDelivery.objects.exists())
+
+    def test_chosen_sender_is_used_and_carries_forward(self):
+        sender = Sender.objects.create(name="Pres", email="pres@example.org")
+        resp = self._send(self.amy, sender=sender.pk)
+        self.assertEqual(mail.outbox[0].from_email, sender.header)
+        self.assertEqual(AnnouncementDelivery.objects.get().sender, sender.header)
+        self.assertContains(resp, f'<option value="{sender.pk}" selected>')
+
+    def test_double_submit_sends_once(self):
+        self._send(self.amy)
+        resp = self._send(self.amy)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertContains(resp, "already handled")
+
+    def test_failed_send_keeps_no_record_and_keeps_the_text(self):
+        with patch("communications.individual.send_messages",
+                   side_effect=RuntimeError("Brevo down")), \
+                self.assertLogs("communications.views", "ERROR"):
+            resp = self._send(self.ben, "My subject", "My careful words")
+        self.assertFalse(AnnouncementDelivery.objects.exists())
+        self.assertContains(resp, "Brevo down")
+        # Still on Ben, though Amy is first in line, with the text intact.
+        self.assertEqual(resp.context["current"]["name"], "Ben")
+        self.assertContains(resp, "My careful words")
+        self._send(self.ben)
+        self.assertEqual(self._sent_to(), ["ben1@example.com"])
+
+    def test_send_not_accepted_keeps_no_record(self):
+        with patch("communications.individual.send_messages", return_value=0), \
+                self.assertLogs("communications.views", "ERROR"):
+            self._send(self.amy)
+        self.assertFalse(AnnouncementDelivery.objects.exists())
+
+    def test_retired_sender_sends_nothing(self):
+        sender = Sender.objects.create(email="old@example.org", is_active=False)
+        with self.assertLogs("communications.views", "ERROR"):
+            self._send(self.amy, sender=sender.pk)
+        self.assertFalse(mail.outbox)
+        self.assertFalse(AnnouncementDelivery.objects.exists())
+
+    def test_blank_text_is_refused_rather_than_replaced(self):
+        resp = self._send(self.amy, subject="S", body="   ")
+        self.assertContains(resp, "both a subject and a body")
+        self.assertFalse(mail.outbox)
+
+    def test_completes_when_everyone_is_handled(self):
+        self._send(self.amy)
+        self._post("_skip", self.ben)
+        resp = self._send(self.officer)
+        self.ann.refresh_from_db()
+        self.assertIsNotNone(self.ann.sent_at)
+        self.assertContains(resp, "2 sent one at a time")
+        self._send(self.ben)  # closed: nothing more can go out this way
+        self.assertEqual(len(mail.outbox), 2)
+
+    def test_skipped_person_can_be_put_back(self):
+        self._post("_skip", self.amy)
+        skipped = AnnouncementDelivery.objects.get()
+        resp = self._post("_restore", _restore=skipped.pk)
+        self.assertEqual(resp.context["current"]["name"], "Amy")
+        self.assertFalse(AnnouncementDelivery.objects.exists())
+
+    def test_a_sent_record_cannot_be_put_back(self):
+        self._send(self.amy)
+        self._post("_restore", _restore=AnnouncementDelivery.objects.get().pk)
+        self.assertEqual(AnnouncementDelivery.objects.count(), 1)
+
+    def test_everyone_skipped_is_not_marked_sent_even_by_a_bulk_send(self):
+        for user in (self.amy, self.ben, self.officer):
+            self._post("_skip", user)
+        self.assertContains(self._get(), "Everyone was skipped")
+        self._bulk()
+        self.ann.refresh_from_db()
+        self.assertIsNone(self.ann.sent_at)
+        self.assertFalse(mail.outbox)
+
+    def test_bulk_send_partway_covers_only_the_rest(self):
+        self._send(self.amy)
+        self._post("_skip", self.ben)
+        mail.outbox.clear()
+        review = self._bulk("get")
+        self.assertEqual(review.context["total"], 1)
+        self.assertContains(review, "A normal send leaves out")
+        self.assertContains(review, "Ben (skipped)")
+        self._bulk()
+        self.assertEqual(self._sent_to(), ["zed@example.com"])
+        self.ann.refresh_from_db()
+        self.assertIsNotNone(self.ann.sent_at)
+
+    def test_resending_a_completed_announcement_goes_to_everyone(self):
+        for user in (self.amy, self.ben, self.officer):
+            self._send(user)
+        mail.outbox.clear()
+        self.ann.refresh_from_db()
+        self.assertEqual(self.ann.send(), 3)
+
+    def test_audience_changes_apply_and_can_be_marked_complete(self):
+        self._send(self.amy)
+        User.objects.filter(pk=self.ben.pk).update(is_active=False)
+        User.objects.filter(pk=self.officer.pk).update(is_guest=True)
+        resp = self._get()
+        self.assertContains(resp, "Mark as complete")
+        self._post("_complete")
+        self.ann.refresh_from_db()
+        self.assertIsNotNone(self.ann.sent_at)
+
+    def test_cannot_mark_complete_while_people_are_waiting(self):
+        self._send(self.amy)
+        self._post("_complete")
+        self.ann.refresh_from_db()
+        self.assertIsNone(self.ann.sent_at)
+
+    def test_review_page_offers_it_only_for_a_single_unsent_announcement(self):
+        self.assertContains(self._bulk("get"), "Customize each recipient")
+        other = Announcement.objects.create(subject="Two", body="B")
+        several = self.client.get(reverse("email_review"), {
+            "workflow": "announcement", "announcement": [self.ann.pk, other.pk]})
+        self.assertNotContains(several, "Customize each recipient")
+        Announcement.objects.filter(pk=self.ann.pk).update(sent_at=timezone.now())
+        self.assertNotContains(self._bulk("get"), "Customize each recipient")
+
+    def test_admin_shows_progress_and_history_and_still_saves(self):
+        changelist = reverse("admin:communications_announcement_changelist")
+        change = reverse("admin:communications_announcement_change",
+                         args=[self.ann.pk])
+        self._send(self.amy, body="Personal note")
+        self.assertContains(self.client.get(changelist), "1 of 3 handled")
+        resp = self.client.get(change)
+        self.assertContains(resp, "Personal note")
+        data = {"subject": "Edited", "body": "B", "audience": "all"}
+        for formset in resp.context["inline_admin_formsets"]:
+            management = formset.formset.management_form
+            for name in management.fields:
+                data[management.add_prefix(name)] = management[name].value()
+            for i, form in enumerate(formset.formset.initial_forms):
+                data[form.add_prefix("id")] = form.instance.pk
+                data[form.add_prefix("announcement")] = self.ann.pk
+        self.assertEqual(self.client.post(change, data).status_code, 302)
+        self.ann.refresh_from_db()
+        self.assertEqual(self.ann.subject, "Edited")
+        self.assertEqual(AnnouncementDelivery.objects.count(), 1)
+
+    def test_requires_permission_to_change_announcements(self):
+        viewer = User.objects.create_user("v2", "v2@example.com", "pw")
+        self.client.force_login(viewer)
+        self.assertEqual(self._get().status_code, 302)  # not staff
+        User.objects.filter(pk=viewer.pk).update(is_staff=True)
+        self.assertEqual(self._get().status_code, 403)
+

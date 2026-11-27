@@ -12,30 +12,7 @@
 {% block extrastyle %}
     {{ block.super }}
     <link rel="stylesheet" href="{% static 'core/emoji-field.css' %}">
-    <style>
-        .email-review .group { border: 1px solid var(--hairline-color, #ddd);
-            border-radius: 4px; padding: 1em 1.2em; margin-bottom: 1.2em; }
-        .email-review .group h2 { margin-top: 0; }
-        .email-review label { display: block; font-weight: 600; margin: 0.6em 0 0.2em; }
-        .email-review input[type=text], .email-review textarea {
-            width: 100%; box-sizing: border-box; font: inherit; padding: 0.4em; }
-        .email-review textarea { min-height: 9em; }
-        .email-review .placeholders { color: var(--body-quiet-color, #666);
-            font-size: 0.9em; margin: 0.3em 0; }
-        .email-review .placeholders code { background: var(--darkened-bg, #f2f2f2);
-            padding: 0 0.3em; border-radius: 3px; }
-        .email-review .preview { background: var(--darkened-bg, #f8f8f8);
-            border: 1px solid var(--hairline-color, #eee); border-radius: 4px;
-            padding: 0.6em 0.8em; margin-top: 0.6em; }
-        .email-review .preview .psubj { font-weight: 600; }
-        .email-review .preview .pbody { margin-top: 0.4em; }
-        .email-review .preview .pbody > :first-child { margin-top: 0; }
-        .email-review .preview .pbody > :last-child { margin-bottom: 0; }
-        .email-review .preview .pbody p { margin: 0 0 0.6em; }
-        .email-review details { margin-top: 0.6em; }
-        .email-review .actions { margin-top: 1em; }
-        .email-review .actions .cancel { margin-left: 0.6em; }
-    </style>
+    {% include "communications/admin/_email_styles.html" %}
 {% endblock %}
 
 {% block content %}
@@ -60,6 +37,7 @@
                 <div class="group" data-key="{{ group.key }}"
                      data-context="{{ group.sample_context_json }}">
                     <h2>{{ group.label }}</h2>
+                    {% include "communications/admin/_individual_notice.html" %}
 
                     <label for="sender_{{ group.key }}">Send from</label>
                     <select id="sender_{{ group.key }}" name="sender_{{ group.key }}">
@@ -105,47 +83,19 @@
             {% endfor %}
 
             <div class="actions">
-                {# An <input>, not a <button>: Django admin only paints the primary #}
-                {# color on input[type=submit].default, so a <button> renders gray. #}
+                {# An <input>, not a <button>: Django admin only styles a <button> #}
+                {# that has class="button", and never paints it as the primary. #}
                 <input type="submit" class="default"
                        value="Send {{ total }} email{{ total|pluralize }} now">
-                <button type="submit" name="_cancel" value="1" class="cancel">Cancel</button>
+                <input type="submit" class="exit" name="_cancel" value="Cancel">
             </div>
         </form>
     {% else %}
         <p><em>No emails to send.</em></p>
-        <p><a href="{{ back_url }}" class="button">Back</a></p>
+        {% for group in draft.groups %}{% include "communications/admin/_individual_notice.html" %}{% endfor %}
+        <p><a href="{{ back_url }}">Back</a></p>
     {% endif %}
 </div>
 
-<script src="{% static 'core/vendor/marked.min.js' %}"></script>
-<script src="{% static 'core/emoji-field.js' %}"></script>
-<script>
-(function () {
-    // Match the server's Markdown render (nl2br): single newlines -> <br>.
-    function renderMarkdown(text) {
-        return window.marked ? window.marked.parse(text, { breaks: true, gfm: true }) : text;
-    }
-    function subst(template, ctx) {
-        return template.replace(/\{(\w+)\}/g, function (m, k) {
-            return Object.prototype.hasOwnProperty.call(ctx, k) ? ctx[k] : "";
-        });
-    }
-    document.querySelectorAll(".email-review .group").forEach(function (g) {
-        var key = g.dataset.key, ctx = {};
-        try { ctx = JSON.parse(g.dataset.context || "{}"); } catch (e) {}
-        var subj = document.getElementById("subj_" + key);
-        var body = document.getElementById("body_" + key);
-        var psubj = document.getElementById("psubj_" + key);
-        var pbody = document.getElementById("pbody_" + key);
-        function update() {
-            psubj.textContent = subst(subj.value, ctx);
-            // Body is Markdown -> rendered HTML, mirroring the sent email.
-            pbody.innerHTML = renderMarkdown(subst(body.value, ctx));
-        }
-        subj.addEventListener("input", update);
-        body.addEventListener("input", update);
-    });
-})();
-</script>
+{% include "communications/admin/_email_preview_js.html" %}
 {% endblock %}

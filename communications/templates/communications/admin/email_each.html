@@ -1,0 +1,118 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+
+{% block breadcrumbs %}
+    <div class="breadcrumbs">
+        <a href="{% url 'admin:index' %}">Home</a>
+        &rsaquo; <a href="{{ back_url }}">{{ announcement.subject }}</a>
+        &rsaquo; Send one at a time
+    </div>
+{% endblock %}
+
+{% block extrastyle %}
+    {{ block.super }}
+    <link rel="stylesheet" href="{% static 'core/emoji-field.css' %}">
+    {% include "communications/admin/_email_styles.html" %}
+{% endblock %}
+
+{% block content %}
+{% static 'core/vendor/emoji-picker-element/picker.js' as emoji_picker_src %}
+{% static 'core/vendor/emoji-picker-element/data.json' as emoji_data_src %}
+<div class="email-review">
+    <form method="post" action="{% url 'email_each' %}">
+        {% csrf_token %}
+        {# Pressing Enter in a field triggers the form's first submit button. #}
+        {# This disabled one comes first, so Enter can't send by accident. #}
+        <button type="submit" disabled hidden></button>
+        <input type="hidden" name="announcement" value="{{ announcement.pk }}">
+
+        {% if current %}
+            <p><strong>{{ position }} of {{ total }}</strong>. Changes here apply only to this
+            person. To change the wording for everyone left,
+            <a href="{{ back_url }}">edit the announcement</a>.</p>
+
+            <div class="group" data-key="{{ group.key }}"
+                 data-context="{{ group.sample_context_json }}">
+                <h2>To {{ current.name }} &lt;{{ current.email }}&gt;</h2>
+                <input type="hidden" name="user" value="{{ current.user_id }}">
+
+                <label for="sender">Send from</label>
+                <select id="sender" name="sender">
+                    <option value="">{{ default_sender }} (default)</option>
+                    {% for s in senders %}<option value="{{ s.pk }}"{% if sender_id == s.pk|stringformat:"s" %} selected{% endif %}>{{ s.header }}</option>{% endfor %}
+                </select>
+
+                <label for="subj_{{ group.key }}">Subject</label>
+                <input type="text" id="subj_{{ group.key }}" name="subject"
+                       value="{{ group.subject }}"
+                       data-emoji
+                       data-emoji-picker-src="{{ emoji_picker_src }}"
+                       data-emoji-data-src="{{ emoji_data_src }}">
+
+                <label for="body_{{ group.key }}">Body</label>
+                <textarea id="body_{{ group.key }}" name="body"
+                          data-emoji
+                          data-emoji-picker-src="{{ emoji_picker_src }}"
+                          data-emoji-data-src="{{ emoji_data_src }}">{{ group.body }}</textarea>
+
+                <div class="preview">
+                    <div style="font-size:0.85em;color:var(--body-quiet-color,#666);">Preview</div>
+                    <div class="psubj" id="psubj_{{ group.key }}">{{ group.preview_subject }}</div>
+                    <div class="pbody" id="pbody_{{ group.key }}">{{ group.preview_body_html|safe }}</div>
+                </div>
+            </div>
+
+            {% if is_last %}
+                <p>This is the last person. Sending or skipping finishes the announcement
+                if at least one email has gone out, and skipped people can’t be put back
+                after that.</p>
+            {% endif %}
+
+            <div class="actions">
+                <input type="submit" class="default" name="_send"
+                       value="{% if is_last %}Send{% else %}Send &amp; next{% endif %}">
+                <input type="submit" name="_skip" value="Skip">
+                <input type="submit" class="exit" name="_later" value="Finish later">
+                <span class="help">Unsent changes to this message aren’t saved.</span>
+            </div>
+        {% elif announcement.sent_at %}
+            <p>This announcement has been sent. {{ sent_count }} sent one at a time.</p>
+            <p><a href="{{ back_url }}">Back to the announcement</a></p>
+        {% else %}
+            <p><em>Nobody is waiting.</em></p>
+            {% if sent_count %}
+                <p><input type="submit" class="default" name="_complete" value="Mark as complete"></p>
+            {% elif deliveries %}
+                <p>Everyone was skipped, so nothing has been sent. Put someone back to send to them.</p>
+            {% endif %}
+            <p><a href="{{ back_url }}">Back to the announcement</a></p>
+        {% endif %}
+
+        {% if up_next %}
+            <details>
+                <summary>{{ up_next|length }} more waiting</summary>
+                <ul>{% for r in up_next %}<li>{{ r.name }} &lt;{{ r.email }}&gt;</li>{% endfor %}</ul>
+            </details>
+        {% endif %}
+
+        {% if deliveries %}
+            <details{% if not current %} open{% endif %}>
+                <summary>{{ deliveries|length }} handled</summary>
+                <ul>
+                    {% for d in deliveries %}
+                        <li>{{ d.name }} &lt;{{ d.email }}&gt;: {{ d.get_status_display|lower }}
+                            {% if d.status == "skipped" and not announcement.sent_at %}
+                                {# A <button> so the value can be the record id; "button" styles it. #}
+                                <button type="submit" class="button" name="_restore" value="{{ d.pk }}">Put back</button>
+                            {% endif %}
+                        </li>
+                    {% endfor %}
+                </ul>
+            </details>
+        {% endif %}
+        {% if not current %}<input type="hidden" name="sender" value="{{ sender_id }}">{% endif %}
+    </form>
+</div>
+
+{% if current %}{% include "communications/admin/_email_preview_js.html" %}{% endif %}
+{% endblock %}

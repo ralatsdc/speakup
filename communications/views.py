@@ -7,15 +7,23 @@ confirm.
 """
 
 import json
+import logging
+from urllib.parse import urlencode
 
 from django.contrib import admin, messages
 from django.contrib.admin.views.decorators import staff_member_required
+from django.core.exceptions import PermissionDenied
+from django.db import transaction
 from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 
+from . import individual
 from .emails import (active_senders, default_sender, render as render_template,
-                     to_html, total_recipients)
+                     to_html_fragment, total_recipients)
+from .models import Announcement, AnnouncementDelivery
+
+logger = logging.getLogger(__name__)
 
 
 def _resolve_handler(workflow, request):
@@ -66,7 +74,6 @@ def _resolve_handler(workflow, request):
 
     if workflow == "announcement":
         from django.utils import timezone
-        from .models import Announcement
         from .emails import build_announcement_draft
         from .utils import send_announcements
 
@@ -84,11 +91,19 @@ def _resolve_handler(workflow, request):
         anns = [get_object_or_404(Announcement, pk=aid) for aid in ann_ids]
 
         def send(edits):
-            count = send_announcements(anns, edits)
-            now = timezone.now()
-            for a in anns:
-                a.sent_at = now
-                a.save(update_fields=["sent_at"])
+            with transaction.atomic():
+                # Locked so a one-at-a-time send can't slip in between working
+                # out who is left and mailing them.
+                locked = list(Announcement.objects.select_for_update().filter(
+                    pk__in=[a.pk for a in anns]).order_by("pk"))
+                unsent = {a.pk for a in locked if individual.everyone_skipped(a)}
+                count = send_announcements(anns, edits)
+                now = timezone.now()
+                for a in anns:
+                    if a.pk in unsent:
+                        continue
+                    a.sent_at = now
+                    a.save(update_fields=["sent_at"])
             plural = "s" if count != 1 else ""
             if len(anns) == 1:
                 return f"Sent '{anns[0].subject}' to {count} recipient{plural}."
@@ -160,7 +175,9 @@ def _attach_previews(groups):
         g["preview_subject"] = render_template(g["subject"], ctx)
         # Server-rendered HTML for the first paint (and a no-JS fallback); the
         # client re-renders Markdown live as the body is edited.
-        g["preview_body_html"] = to_html(render_template(g["body"], ctx))
+        # A fragment: the email's own <body> tag, nested in the admin page,
+        # would restyle the whole page (unreadable in dark mode).
+        g["preview_body_html"] = to_html_fragment(render_template(g["body"], ctx))
 
 
 @staff_member_required
@@ -203,3 +220,122 @@ def email_review(request):
         "default_sender": default_sender(),
         "senders": active_senders(),
     })
+
+
+@staff_member_required
+def send_one_at_a_time(request):
+    """Step through an announcement's recipients, customizing each message.
+    Shows the next person waiting; each action redirects back here."""
+    if not request.user.has_perm("communications.change_announcement"):
+        raise PermissionDenied
+    params = request.POST if request.method == "POST" else request.GET
+    pk = params.get("announcement", "")
+    if not pk.isdigit():
+        raise Http404("No announcement selected")
+    announcement = get_object_or_404(Announcement, pk=pk)
+    sender_id = params.get("sender", "")
+    here = reverse("email_each") + "?" + urlencode(
+        {"announcement": announcement.pk, "sender": sender_id})
+    back_url = reverse("admin:communications_announcement_change",
+                       args=[announcement.pk])
+    draft = None  # the officer's text, kept if a send fails
+
+    if request.method == "POST":
+        if "_later" in request.POST:
+            return redirect(back_url)
+        user_id = _int_or_none(request.POST.get("user"))
+        try:
+            if "_send" in request.POST:
+                subject = request.POST.get("subject", "")
+                body = request.POST.get("body", "")
+                draft = {"user_id": user_id, "subject": subject, "body": body}
+                if not (subject.strip() and body.strip()):
+                    messages.error(request, "Enter both a subject and a body.")
+                else:
+                    delivery, completed = individual.send_one(
+                        announcement.pk, user_id, request.user,
+                        subject, body, sender_id)
+                    messages.success(request, f"Sent to {delivery.name}.")
+                    return _after_step(request, completed, here)
+            elif "_skip" in request.POST:
+                delivery, completed = individual.skip_one(
+                    announcement.pk, user_id, request.user)
+                messages.success(request, f"Skipped {delivery.name}.")
+                return _after_step(request, completed, here)
+            elif "_restore" in request.POST:
+                individual.restore(
+                    announcement.pk,
+                    _int_or_none(request.POST.get("_restore")))
+                return redirect(here)
+            elif "_complete" in request.POST:
+                individual.complete(announcement.pk)
+                return _after_step(request, True, here)
+            else:
+                return redirect(here)
+        except individual.NotAvailable as e:
+            messages.warning(request, str(e))
+            return redirect(here)
+        except Exception as e:
+            logger.exception("One-at-a-time send failed: %s", announcement)
+            messages.error(request, f"Could not send the email: {e}")
+
+    try:
+        waiting = ([] if announcement.sent_at
+                   else individual.remaining(announcement))
+    except ValueError as e:
+        messages.error(request, f"Could not build the email: {e}")
+        return redirect(back_url)
+
+    deliveries = list(announcement.deliveries.all())
+    current = waiting[0] if waiting else None
+    if draft:
+        # Stay on the person whose send failed.
+        match = next(
+            (r for r in waiting if r["user_id"] == draft["user_id"]), None)
+        if match:
+            current = match
+        else:
+            draft = None
+
+    group = None
+    if current:
+        context = current["context"]
+        group = {
+            "key": "one",
+            "subject": (draft["subject"] if draft else
+                        render_template(announcement.subject, context)),
+            "body": (draft["body"] if draft else
+                     render_template(announcement.body, context)),
+            "recipients": [current],
+        }
+        _attach_previews([group])
+
+    return render(request, "communications/admin/email_each.html", {
+        **admin.site.each_context(request),
+        "title": f"Send one at a time: {announcement.subject}",
+        "announcement": announcement,
+        "back_url": back_url,
+        "current": current,
+        "group": group,
+        "position": len(deliveries) + 1,
+        "total": len(deliveries) + len(waiting),
+        "is_last": len(waiting) == 1,
+        "up_next": [r for r in waiting if r is not current],
+        "deliveries": deliveries,
+        "sent_count": sum(d.status == AnnouncementDelivery.SENT
+                          for d in deliveries),
+        "default_sender": default_sender(),
+        "senders": active_senders(),
+        "sender_id": sender_id,
+    })
+
+
+def _int_or_none(value):
+    return int(value) if value and value.isdigit() else None
+
+
+def _after_step(request, completed, here):
+    if completed:
+        messages.success(
+            request, "Everyone has been handled. The announcement is complete.")
+    return redirect(here)

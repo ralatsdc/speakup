@@ -122,6 +122,7 @@ The largest app. Contains the data model for meeting templates and instances, pl
 - `Announcement` model with subject, body, audience (all/officers/guests), timestamps
 - `send_announcement()` in `communications/utils.py` filters recipients by audience and dispatches email
 - Admin has a custom "Save & review to send…" button and a bulk send action
+- One-at-a-time sending (`/email/review/each/`, logic in `communications/individual.py`) records one `AnnouncementDelivery` per recipient sent or skipped. An announcement with records and no `sent_at` is in progress: the bulk send leaves out handled recipients. Each step locks the announcement row, and a failed send rolls back its record
 - `EmailTemplate` holds reusable subject/body text. The announcement form's "Start from template" picker copies it client-side (`template-picker.js`); no link is stored. The "Save selected announcements as templates" action goes the other way
 
 ### core

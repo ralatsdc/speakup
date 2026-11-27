@@ -5,7 +5,7 @@ from django.contrib.auth.views import LoginView
 from django.urls import path, include
 
 from core import views as core_views
-from communications.views import email_review
+from communications.views import email_review, send_one_at_a_time
 from members.forms import EmailAuthenticationForm
 
 urlpatterns = [
@@ -21,6 +21,7 @@ urlpatterns = [
     path("", include("members.urls")),
     path("help/", core_views.help_page, name="help"),
     path("email/review/", email_review, name="email_review"),
+    path("email/review/each/", send_one_at_a_time, name="email_each"),
     path("", core_views.landing_page, name="landing"),
     path("", include("meetings.urls")),
 ]

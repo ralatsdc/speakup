@@ -47,6 +47,7 @@ A `post_save` signal on `Meeting` auto-populates `MeetingSession` and `MeetingRo
 - `meetings/services.py` — Guest-to-user conversion
 - `meetings/utils.py` — `send_meeting_reminders()`, `send_meeting_feedback()`
 - `communications/utils.py` — `send_announcement()`
+- `communications/individual.py` — one-at-a-time announcement sending and its progress rules
 
 ### Frontend
 
@@ -79,5 +80,5 @@ Dev: console backend. Production: Brevo via `django-anymail`. Three workflows tr
 
 - `MeetingAdmin` — Custom change form with "Send Email Reminders" and "Send Feedback Emails" buttons
 - `AttendanceAdmin` — Bulk action: "Convert selected guests to Users"
-- `AnnouncementAdmin` — Custom "Save & review to send…" button (opens the review page; sending happens there); "Start from template" picker and "Save as template" action (`EmailTemplate`)
+- `AnnouncementAdmin` — Custom "Save & review to send…" button (opens the review page; sending happens there); "Start from template" picker and "Save as template" action (`EmailTemplate`); one-at-a-time progress column and read-only delivery history
 - `CustomUserAdmin` — CSV import/export, bulk make/remove guest/officer/active actions

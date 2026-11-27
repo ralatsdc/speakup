@@ -85,12 +85,17 @@ _HTML_TEMPLATE = (
 )
 
 
+def to_html_fragment(text):
+    """Render Markdown ``text`` to HTML without a document around it, for
+    showing inside a page. Single newlines become ``<br>`` (``nl2br``) so
+    bodies authored as plain paragraphs keep their line breaks; ``extra``
+    covers links, lists, bold/italic, etc."""
+    return md.markdown(text or "", extensions=["extra", "nl2br", "sane_lists"])
+
+
 def to_html(text):
-    """Render Markdown ``text`` to a standalone HTML document. Single newlines
-    become ``<br>`` (``nl2br``) so bodies authored as plain paragraphs keep
-    their line breaks; ``extra`` covers links, lists, bold/italic, etc."""
-    inner = md.markdown(text or "", extensions=["extra", "nl2br", "sane_lists"])
-    return _HTML_TEMPLATE.format(inner=inner)
+    """Render Markdown ``text`` to the standalone HTML document we email."""
+    return _HTML_TEMPLATE.format(inner=to_html_fragment(text))
 
 
 def to_text(text):
@@ -158,7 +163,7 @@ def total_recipients(groups):
 # --- announcement workflow -------------------------------------------------
 
 
-def _announcement_recipients(announcement):
+def announcement_recipients(announcement):
     from django.contrib.auth import get_user_model
 
     from .models import Announcement
@@ -181,7 +186,7 @@ def _announcement_recipients(announcement):
     else:
         qs = User.objects.filter(is_active=True, is_guest=False)
     return [
-        {"email": u.email, "name": str(u),
+        {"user_id": u.pk, "email": u.email, "name": str(u),
          "context": {"first_name": u.first_name}}
         for u in qs if u.email
     ]
@@ -205,9 +210,19 @@ def build_announcement_draft(announcements, back_url=""):
     multiple = len(announcements) > 1
     groups = []
     for announcement in announcements:
-        recipients = _announcement_recipients(announcement)
+        recipients = announcement_recipients(announcement)
+        handled = []
+        # Partway through one-at-a-time sending, a normal send covers only the
+        # people not yet sent or skipped.
+        if announcement.sent_at is None:
+            handled = list(announcement.deliveries.all())
+            done = {d.user_id for d in handled}
+            recipients = [r for r in recipients if r["user_id"] not in done]
         audience = f"{announcement.get_audience_display()} ({len(recipients)})"
         groups.append({
+            "announcement_id": announcement.id,
+            "can_send_individually": announcement.sent_at is None,
+            "handled": handled,
             "key": announcement_group_key(announcement),
             # With several on the page the audience alone doesn't say which
             # announcement a section belongs to, so lead with the subject.
