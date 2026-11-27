@@ -1,3 +1,4 @@
+import re
 from datetime import timedelta
 from unittest.mock import patch
 
@@ -1063,3 +1064,33 @@ class OneAtATimeSendTest(TestCase):
         User.objects.filter(pk=viewer.pk).update(is_staff=True)
         self.assertEqual(self._get().status_code, 403)
 
+
+class EditPageButtonStyleTest(TestCase):
+    """Save is the one main action on an edit page; the custom buttons are
+    ordinary ones, with no colors of their own. See CLAUDE.md."""
+
+    def setUp(self):
+        self.client.force_login(User.objects.create_superuser(
+            "styler", "styler@example.com", "pw"))
+
+    def _assert_secondary(self, url, *names):
+        html = self.client.get(url).content.decode()
+        for name in names:
+            tag = re.search(rf'<input[^>]*name="{name}"[^>]*>', html).group(0)
+            self.assertNotIn("class=", tag)
+            self.assertNotIn("style=", tag)
+        self.assertRegex(html, r'<input[^>]*class="default"[^>]*name="_save"')
+
+    def test_announcement_edit_page(self):
+        announcement = Announcement.objects.create(subject="S", body="B")
+        self._assert_secondary(
+            reverse("admin:communications_announcement_change",
+                    args=[announcement.pk]), "_send-announcement")
+
+    @override_settings(ZOOM_INTEGRATION_ENABLED=True)
+    def test_meeting_edit_page(self):
+        meeting = Meeting.objects.create(date=timezone.now())
+        self._assert_secondary(
+            reverse("admin:meetings_meeting_change", args=[meeting.pk]),
+            "_send-reminders", "_send-feedback", "_import-zoom",
+            "_send-register")

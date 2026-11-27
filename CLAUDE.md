@@ -72,6 +72,22 @@ either way, and the app renders from one origin.
 
 `DEBUG` env var drives the dev/deploy split. When `DEBUG=False`: SSL redirect, secure cookies, Brevo email backend, WhiteNoise static compression. Database configured via `DATABASE_URL` (defaults to SQLite).
 
+### Admin buttons and links
+
+How a control looks shows what kind of action it is. Use Django admin's own
+styles; don't add per-feature colors or inline `style` colors.
+
+| Style | How | Meaning |
+|---|---|---|
+| Dark filled | `class="default"` | The main action, at most one per group. On edit pages that is Save |
+| Teal filled | plain `input[type=submit]`, or `<button class="button">` | Another action that changes something, or leads to one |
+| Gray filled | `class="exit"` | Leave without sending or recording anything (Cancel, Finish later) |
+| Red | Django's delete styles | Delete or destroy |
+| Text link | `<a>` | Only goes to another page |
+
+Admin doesn't style a bare `<button>`. `.exit` is currently defined only for the
+email pages, in `communications/admin/_email_styles.html`.
+
 ### Email
 
 Dev: console backend. Production: Brevo via `django-anymail`. Three workflows triggered from admin: meeting reminders, meeting feedback, announcements. All use `send_mass_mail()`.

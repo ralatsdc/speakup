@@ -40,22 +40,24 @@
     <div class="meeting-admin-submit-sticky">
     {{ block.super }}
     <div class="submit-row">
+        {# Teal, not .default: Save above is this page's one main action. #}
         <!-- Button 1: Pre-Meeting Reminders -->
-        <input type="submit" value="Send Email Reminders" name="_send-reminders" class="default" style="background-color: #e11d48; margin-right: 10px;">
+        <input type="submit" value="Send Email Reminders" name="_send-reminders">
 
         <!-- Button 2: Post-Meeting Feedback -->
-        <input type="submit" value="Send Feedback Emails" name="_send-feedback" class="default" style="background-color: #10b981;">
+        <input type="submit" value="Send Feedback Emails" name="_send-feedback">
 
         {% if zoom_integration_enabled %}
         <!-- Buttons 3 & 4: Zoom (gated on settings.ZOOM_INTEGRATION_ENABLED) -->
-        <input type="submit" value="Import Zoom Attendance" name="_import-zoom" class="default" style="background-color: #2563eb; margin-left: 10px;">
-        <input type="submit" value="Email Remote to Register" name="_send-register" class="default" style="background-color: #7c3aed; margin-left: 10px;">
+        <input type="submit" value="Import Zoom Attendance" name="_import-zoom">
+        <input type="submit" value="Email Remote to Register" name="_send-register">
         {% endif %}
 
         <p class="help">
-            <strong>Red:</strong> Remind people BEFORE the meeting.<br>
-            <strong>Green:</strong> Send 'Admin Notes' to specific members AFTER the meeting.
-            {% if zoom_integration_enabled %}<br><strong>Blue:</strong> Import who joined the Zoom call as attendance records.<br><strong>Purple:</strong> Email remote sign-ups who haven't registered on Zoom yet.{% endif %}
+            <strong>Send Email Reminders:</strong> remind people before the meeting.<br>
+            <strong>Send Feedback Emails:</strong> after the meeting, send members their admin notes and thank guests.
+            {% if zoom_integration_enabled %}<br><strong>Import Zoom Attendance:</strong> record who joined the Zoom call. Runs right away.<br><strong>Email Remote to Register:</strong> email remote sign-ups who haven’t registered on Zoom yet.{% endif %}
+            <br>Each button saves your changes first. Emails are sent only after you confirm on the review page.
         </p>
     </div>
     </div>
