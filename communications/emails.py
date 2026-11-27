@@ -158,7 +158,7 @@ def total_recipients(groups):
 # --- announcement workflow -------------------------------------------------
 
 
-def _announcement_recipients(announcement):
+def announcement_recipients(announcement):
     from django.contrib.auth import get_user_model
 
     from .models import Announcement
@@ -181,7 +181,7 @@ def _announcement_recipients(announcement):
     else:
         qs = User.objects.filter(is_active=True, is_guest=False)
     return [
-        {"email": u.email, "name": str(u),
+        {"user_id": u.pk, "email": u.email, "name": str(u),
          "context": {"first_name": u.first_name}}
         for u in qs if u.email
     ]
@@ -205,9 +205,19 @@ def build_announcement_draft(announcements, back_url=""):
     multiple = len(announcements) > 1
     groups = []
     for announcement in announcements:
-        recipients = _announcement_recipients(announcement)
+        recipients = announcement_recipients(announcement)
+        handled = []
+        # Partway through one-at-a-time sending, a normal send covers only the
+        # people not yet sent or skipped.
+        if announcement.sent_at is None:
+            handled = list(announcement.deliveries.all())
+            done = {d.user_id for d in handled}
+            recipients = [r for r in recipients if r["user_id"] not in done]
         audience = f"{announcement.get_audience_display()} ({len(recipients)})"
         groups.append({
+            "announcement_id": announcement.id,
+            "can_send_individually": announcement.sent_at is None,
+            "handled": handled,
             "key": announcement_group_key(announcement),
             # With several on the page the audience alone doesn't say which
             # announcement a section belongs to, so lead with the subject.

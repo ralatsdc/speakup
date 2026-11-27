@@ -42,6 +42,49 @@ class Announcement(models.Model):
         return send_announcement(self)
 
 
+class AnnouncementDelivery(models.Model):
+    """What happened to one recipient during one-at-a-time sending.
+
+    A row means the recipient is handled (sent or skipped). While the
+    announcement is unfinished, neither send path will mail them again. The
+    normal bulk send doesn't create rows.
+    """
+
+    SENT = "sent"
+    SKIPPED = "skipped"
+    STATUS_CHOICES = [(SENT, "Sent"), (SKIPPED, "Skipped")]
+
+    announcement = models.ForeignKey(
+        Announcement, on_delete=models.CASCADE, related_name="deliveries")
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="+")
+    # Copied at the time, so the history survives later changes to the member.
+    name = models.CharField(max_length=301)
+    email = models.EmailField()
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES)
+    # What was actually sent; blank for a skip.
+    sender = models.CharField(max_length=400, blank=True)
+    subject = models.TextField(blank=True)
+    body = models.TextField(blank=True)
+    handled_at = models.DateTimeField(auto_now_add=True)
+    handled_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="+")
+
+    class Meta:
+        ordering = ["handled_at", "pk"]
+        verbose_name_plural = "one-at-a-time deliveries"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["announcement", "user"],
+                name="one_delivery_per_recipient"),
+        ]
+
+    def __str__(self):
+        return f"{self.name} ({self.get_status_display().lower()})"
+
+
 class EmailTemplate(models.Model):
     """Reusable starting text for an announcement.
 

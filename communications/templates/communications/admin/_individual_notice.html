@@ -1,0 +1,10 @@
+{% if group.handled %}
+    <p><strong>Partly handled one at a time.</strong> A normal send leaves out:
+        {% for d in group.handled %}{{ d.name }} ({{ d.get_status_display|lower }}){% if not forloop.last %}, {% endif %}{% endfor %}.</p>
+{% endif %}
+{% if group.can_send_individually and draft.groups|length == 1 %}
+    {% if group.recipients or group.handled %}
+        <p><a href="{% url 'email_each' %}?announcement={{ group.announcement_id }}">{% if group.handled %}Continue one at a time…{% else %}Customize each recipient…{% endif %}</a>
+        <span class="help">Starts from the saved announcement, so edits made on this page don’t carry over.</span></p>
+    {% endif %}
+{% endif %}

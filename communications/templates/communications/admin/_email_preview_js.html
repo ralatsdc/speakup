@@ -1,0 +1,31 @@
+{% load static %}
+<script src="{% static 'core/vendor/marked.min.js' %}"></script>
+<script src="{% static 'core/emoji-field.js' %}"></script>
+<script>
+(function () {
+    // Match the server's Markdown render (nl2br): single newlines -> <br>.
+    function renderMarkdown(text) {
+        return window.marked ? window.marked.parse(text, { breaks: true, gfm: true }) : text;
+    }
+    function subst(template, ctx) {
+        return template.replace(/\{(\w+)\}/g, function (m, k) {
+            return Object.prototype.hasOwnProperty.call(ctx, k) ? ctx[k] : "";
+        });
+    }
+    document.querySelectorAll(".email-review .group").forEach(function (g) {
+        var key = g.dataset.key, ctx = {};
+        try { ctx = JSON.parse(g.dataset.context || "{}"); } catch (e) {}
+        var subj = document.getElementById("subj_" + key);
+        var body = document.getElementById("body_" + key);
+        var psubj = document.getElementById("psubj_" + key);
+        var pbody = document.getElementById("pbody_" + key);
+        function update() {
+            psubj.textContent = subst(subj.value, ctx);
+            // Body is Markdown -> rendered HTML, mirroring the sent email.
+            pbody.innerHTML = renderMarkdown(subst(body.value, ctx));
+        }
+        subj.addEventListener("input", update);
+        body.addEventListener("input", update);
+    });
+})();
+</script>

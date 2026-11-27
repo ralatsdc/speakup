@@ -6,13 +6,36 @@ from django.urls import reverse
 from django.utils.html import format_html
 
 from .forms import AnnouncementAdminForm, EmailTemplateAdminForm
-from .models import Announcement, EmailTemplate, Sender
+from . import individual
+from .models import Announcement, AnnouncementDelivery, EmailTemplate, Sender
+
+
+class AnnouncementDeliveryInline(admin.TabularInline):
+    """Read-only history of one-at-a-time sending."""
+
+    model = AnnouncementDelivery
+    fields = readonly_fields = (
+        "name", "email", "status", "handled_at", "handled_by", "sender",
+        "subject", "body")
+    extra = 0
+    can_delete = False
+
+    # Anyone who can see the announcement can see its history; nobody edits it.
+    def has_view_permission(self, request, obj=None):
+        return request.user.has_perm("communications.view_announcement")
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(Announcement)
 class AnnouncementAdmin(admin.ModelAdmin):
     form = AnnouncementAdminForm
-    list_display = ("subject", "audience", "recipient_summary", "created_at", "sent_at")
+    list_display = ("subject", "audience", "recipient_summary", "created_at",
+                    "sent_at", "progress")
     fields = ("template", "subject", "body", "audience", "recipients", "sent_at")
     readonly_fields = ("sent_at",)
     # A dual list box rather than autocomplete: at club size the useful action
@@ -20,6 +43,25 @@ class AnnouncementAdmin(admin.ModelAdmin):
     filter_horizontal = ("recipients",)
     actions = ["send_announcement", "save_as_template"]
     change_form_template = "communications/admin/announcement_change_form.html"
+
+    def get_inlines(self, request, obj):
+        if obj is not None and obj.deliveries.exists():
+            return [AnnouncementDeliveryInline]
+        return []
+
+    @admin.display(description="One at a time")
+    def progress(self, obj):
+        """A resume link while a one-at-a-time send is unfinished."""
+        if not individual.is_in_progress(obj):
+            return "—"
+        handled = obj.deliveries.count()
+        try:
+            label = f"{handled} of {handled + len(individual.remaining(obj))} handled"
+        except ValueError:  # the audience is currently empty or invalid
+            label = f"{handled} handled"
+        return format_html(
+            '<a href="{}?announcement={}">{}</a>',
+            reverse("email_each"), obj.pk, label)
 
     def get_fields(self, request, obj=None):
         """Leave the template picker off the view-only page: there is nothing
