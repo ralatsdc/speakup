@@ -3,21 +3,31 @@ from urllib.parse import urlencode
 from django.contrib import admin, messages
 from django.http import HttpResponseRedirect
 from django.urls import reverse
+from django.utils.html import format_html
 
-from .forms import AnnouncementAdminForm
-from .models import Announcement, Sender
+from .forms import AnnouncementAdminForm, EmailTemplateAdminForm
+from .models import Announcement, EmailTemplate, Sender
 
 
 @admin.register(Announcement)
 class AnnouncementAdmin(admin.ModelAdmin):
     form = AnnouncementAdminForm
     list_display = ("subject", "audience", "recipient_summary", "created_at", "sent_at")
+    fields = ("template", "subject", "body", "audience", "recipients", "sent_at")
     readonly_fields = ("sent_at",)
     # A dual list box rather than autocomplete: at club size the useful action
     # is scanning the roster and ticking people off, not recalling exact names.
     filter_horizontal = ("recipients",)
-    actions = ["send_announcement"]
+    actions = ["send_announcement", "save_as_template"]
     change_form_template = "communications/admin/announcement_change_form.html"
+
+    def get_fields(self, request, obj=None):
+        """Leave the template picker off the view-only page: there is nothing
+        to fill in, and admin can't render a non-model field as read-only."""
+        fields = super().get_fields(request, obj)
+        if obj is not None and not self.has_change_permission(request, obj):
+            return [f for f in fields if f != "template"]
+        return fields
 
     def formfield_for_manytomany(self, db_field, request, **kwargs):
         """Only offer active members, so nobody addresses an announcement to
@@ -55,6 +65,22 @@ class AnnouncementAdmin(admin.ModelAdmin):
             [("workflow", "announcement")] + [("announcement", i) for i in ids])
         return HttpResponseRedirect(url)
 
+    def has_add_template_permission(self, request):
+        return request.user.has_perm("communications.add_emailtemplate")
+
+    @admin.action(description="Save selected announcements as templates",
+                  permissions=["add_template"])
+    def save_as_template(self, request, queryset):
+        for announcement in queryset.order_by("created_at"):
+            template = EmailTemplate.create_from(announcement)
+            url = reverse("admin:communications_emailtemplate_change",
+                          args=[template.pk])
+            self.message_user(
+                request,
+                format_html('Saved template “<a href="{}">{}</a>”.',
+                            url, template.name),
+                messages.SUCCESS)
+
     def _review_redirect(self, request, obj):
         """The 'Save & review to send' button routes to the review-before-send
         page instead of dispatching immediately. None if it wasn't pressed."""
@@ -73,6 +99,13 @@ class AnnouncementAdmin(admin.ModelAdmin):
     def response_change(self, request, obj):
         return self._review_redirect(request, obj) or super().response_change(
             request, obj)
+
+
+@admin.register(EmailTemplate)
+class EmailTemplateAdmin(admin.ModelAdmin):
+    form = EmailTemplateAdminForm
+    list_display = ("name", "subject")
+    search_fields = ("name", "subject", "body")
 
 
 @admin.register(Sender)

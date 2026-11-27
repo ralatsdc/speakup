@@ -122,6 +122,7 @@ The largest app. Contains the data model for meeting templates and instances, pl
 - `Announcement` model with subject, body, audience (all/officers/guests), timestamps
 - `send_announcement()` in `communications/utils.py` filters recipients by audience and dispatches email
 - Admin has a custom "Save & review to send…" button and a bulk send action
+- `EmailTemplate` holds reusable subject/body text. The announcement form's "Start from template" picker copies it client-side (`template-picker.js`); no link is stored. The "Save selected announcements as templates" action goes the other way
 
 ### core
 

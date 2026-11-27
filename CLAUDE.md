@@ -79,5 +79,5 @@ Dev: console backend. Production: Brevo via `django-anymail`. Three workflows tr
 
 - `MeetingAdmin` — Custom change form with "Send Email Reminders" and "Send Feedback Emails" buttons
 - `AttendanceAdmin` — Bulk action: "Convert selected guests to Users"
-- `AnnouncementAdmin` — Custom "Save & review to send…" button (opens the review page; sending happens there)
+- `AnnouncementAdmin` — Custom "Save & review to send…" button (opens the review page; sending happens there); "Start from template" picker and "Save as template" action (`EmailTemplate`)
 - `CustomUserAdmin` — CSV import/export, bulk make/remove guest/officer/active actions

@@ -42,6 +42,43 @@ class Announcement(models.Model):
         return send_announcement(self)
 
 
+class EmailTemplate(models.Model):
+    """Reusable starting text for an announcement.
+
+    Choosing one *copies* its subject and body into the announcement; no link
+    is kept, so editing or deleting a template never changes an announcement.
+    """
+
+    name = models.CharField(
+        max_length=200, unique=True,
+        help_text="How it appears in the “Start from template” list.")
+    subject = models.CharField(max_length=200)
+    body = models.TextField(
+        help_text="Markdown is supported (**bold**, *italic*, "
+        "[links](https://…), - lists) along with emojis and the "
+        "{first_name} placeholder.")
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+    @classmethod
+    def create_from(cls, announcement):
+        """Save an announcement's text as a new template, named after its
+        subject, with a numeric suffix if that name is taken."""
+        max_length = cls._meta.get_field("name").max_length
+        name = announcement.subject[:max_length]
+        number = 1
+        while cls.objects.filter(name=name).exists():
+            number += 1
+            suffix = f" ({number})"
+            name = announcement.subject[:max_length - len(suffix)] + suffix
+        return cls.objects.create(
+            name=name, subject=announcement.subject, body=announcement.body)
+
+
 class Sender(models.Model):
     """An address officers can choose to send club email from.
 
