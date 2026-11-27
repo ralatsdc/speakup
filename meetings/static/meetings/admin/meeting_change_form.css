@@ -72,9 +72,9 @@ fieldset.meeting-admin-section,
 .meeting-admin-submit-sticky {
     position: sticky;
     bottom: 0;
-    background: #fff;
+    background: var(--body-bg);
     z-index: 10;
-    border-top: 1px solid #ccc;
+    border-top: 1px solid var(--border-color);
     box-shadow: 0 -2px 4px rgba(0, 0, 0, 0.08);
 }
 /* The action submit-row sits below the Save row; collapse the visual gap
@@ -82,7 +82,7 @@ fieldset.meeting-admin-section,
 .meeting-admin-submit-sticky .submit-row + .submit-row {
     margin-top: 0;
     padding-top: 0.4em;
-    border-top: 1px dashed #eee;
+    border-top: 1px dashed var(--hairline-color);
 }
 /* Help line inside the action submit-row was bottom-margined; pull it in. */
 .meeting-admin-submit-sticky .submit-row p.help {
