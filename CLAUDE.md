@@ -88,6 +88,10 @@ styles; don't add per-feature colors or inline `style` colors.
 A button that only opens the review-before-send page is named "Review …" with
 an ellipsis, not "Send …".
 
+A form that sends email must start with `<button type="submit" disabled
+hidden></button>`. Otherwise pressing Enter in a text field clicks the first
+submit button, which sends.
+
 Prefer `input[type=submit]`. Admin doesn't style a bare `<button>`, even with
 `class="default"`, and `<button class="button">` renders smaller, so keep that
 for compact controls (Filter, Put back). `.exit` is currently defined only for the

@@ -30,6 +30,9 @@
 
         <form method="post" action="{% url 'email_review' %}">
             {% csrf_token %}
+            {# Pressing Enter in a field triggers the form's first submit button. #}
+            {# This disabled one comes first, so Enter can't send by accident. #}
+            <button type="submit" disabled hidden></button>
             {% for k, v in params.items %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
             <input type="hidden" name="back" value="{{ back_url }}">
 

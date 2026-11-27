@@ -1094,3 +1094,29 @@ class EditPageButtonStyleTest(TestCase):
             reverse("admin:meetings_meeting_change", args=[meeting.pk]),
             "_send-reminders", "_send-feedback", "_import-zoom",
             "_send-register")
+
+
+class EnterKeyGuardTest(TestCase):
+    """Pressing Enter in a text field "clicks" the form's first submit button.
+    On the pages that send email, that button must be a disabled one."""
+
+    def setUp(self):
+        self.client.force_login(User.objects.create_superuser(
+            "keys", "keys@example.com", "pw"))
+        self.announcement = Announcement.objects.create(subject="S", body="B")
+
+    def _assert_guarded(self, url, params):
+        html = self.client.get(url, params).content.decode()
+        start = html.index(f'<form method="post" action="{url}"')
+        form = html[start:html.index("</form>", start)]
+        first = re.search(
+            r'<(?:button|input)\b[^>]*type="(?:submit|image)"[^>]*>', form)
+        self.assertRegex(first.group(0), r"\sdisabled\b")
+
+    def test_review_page(self):
+        self._assert_guarded(reverse("email_review"), {
+            "workflow": "announcement", "announcement": self.announcement.pk})
+
+    def test_one_at_a_time_page(self):
+        self._assert_guarded(
+            reverse("email_each"), {"announcement": self.announcement.pk})
