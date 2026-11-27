@@ -892,6 +892,15 @@ class OneAtATimeSendTest(TestCase):
         # The announcement itself is untouched.
         self.assertEqual(self.ann.body, "Dear {first_name}")
 
+    def test_button_styles_show_the_kind_of_action(self):
+        html = self._get().content.decode()
+        self.assertIn('class="default" name="_send"', html)
+        self.assertIn('<input type="submit" name="_skip"', html)
+        self.assertIn('class="exit" name="_later"', html)
+        review = self._bulk("get").content.decode()
+        self.assertIn('class="exit" name="_cancel"', review)
+        self.assertContains(self._post("_skip", self.amy), 'class="button" name="_restore"')
+
     def test_finish_later_leaves_without_sending_or_recording(self):
         resp = self.client.post(self.url, {
             "announcement": self.ann.pk, "user": self.amy.pk,

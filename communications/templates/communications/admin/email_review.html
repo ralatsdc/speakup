@@ -83,17 +83,17 @@
             {% endfor %}
 
             <div class="actions">
-                {# An <input>, not a <button>: Django admin only paints the primary #}
-                {# color on input[type=submit].default, so a <button> renders gray. #}
+                {# An <input>, not a <button>: Django admin only styles a <button> #}
+                {# that has class="button", and never paints it as the primary. #}
                 <input type="submit" class="default"
                        value="Send {{ total }} email{{ total|pluralize }} now">
-                <input type="submit" class="default" name="_cancel" value="Cancel">
+                <input type="submit" class="exit" name="_cancel" value="Cancel">
             </div>
         </form>
     {% else %}
         <p><em>No emails to send.</em></p>
         {% for group in draft.groups %}{% include "communications/admin/_individual_notice.html" %}{% endfor %}
-        <p><a href="{{ back_url }}" class="button">Back</a></p>
+        <p><a href="{{ back_url }}">Back</a></p>
     {% endif %}
 </div>
 

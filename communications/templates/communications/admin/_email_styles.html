@@ -21,4 +21,13 @@
         .email-review details { margin-top: 0.6em; }
         .email-review .actions { margin-top: 1em; }
         .email-review .actions input { margin-right: 0.6em; }
+        /* Button colors show the kind of action: .default (dark) is the main
+           one, a plain button (teal) also changes something, and .exit (gray)
+           leaves without sending or recording anything. Links only navigate. */
+        .email-review input[type=submit].exit { background: var(--close-button-bg); }
+        .email-review input[type=submit].exit:hover,
+        .email-review input[type=submit].exit:focus {
+            background: var(--close-button-hover-bg); }
+        .email-review li { margin-bottom: 0.4em; }
+        .email-review li .button { margin-left: 0.6em; }
     </style>
