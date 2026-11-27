@@ -85,6 +85,9 @@ styles; don't add per-feature colors or inline `style` colors.
 | Red | Django's delete styles | Delete or destroy |
 | Text link | `<a>` | Only goes to another page |
 
+A button that only opens the review-before-send page is named "Review …" with
+an ellipsis, not "Send …".
+
 Admin doesn't style a bare `<button>`. `.exit` is currently defined only for the
 email pages, in `communications/admin/_email_styles.html`.
 
@@ -94,7 +97,7 @@ Dev: console backend. Production: Brevo via `django-anymail`. Three workflows tr
 
 ### Admin Customizations
 
-- `MeetingAdmin` — Custom change form with "Send Email Reminders" and "Send Feedback Emails" buttons
+- `MeetingAdmin` — Custom change form with "Review reminders…" and "Review feedback emails…" buttons
 - `AttendanceAdmin` — Bulk action: "Convert selected guests to Users"
 - `AnnouncementAdmin` — Custom "Save & review to send…" button (opens the review page; sending happens there); "Start from template" picker and "Save as template" action (`EmailTemplate`); one-at-a-time progress column and read-only delivery history
 - `CustomUserAdmin` — CSV import/export, bulk make/remove guest/officer/active actions
