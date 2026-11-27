@@ -80,7 +80,7 @@ styles; don't add per-feature colors or inline `style` colors.
 | Style | How | Meaning |
 |---|---|---|
 | Dark filled | `class="default"` | The main action, at most one per group. On edit pages that is Save |
-| Teal filled | plain `input[type=submit]`, or `<button class="button">` | Another action that changes something, or leads to one |
+| Teal filled | plain `input[type=submit]`, or `<button class="button">` | Another action that changes something or leads to one, including controls that filter what's shown |
 | Gray filled | `class="exit"` | Leave without sending or recording anything (Cancel, Finish later) |
 | Red | Django's delete styles | Delete or destroy |
 | Text link | `<a>` | Only goes to another page |
@@ -88,7 +88,9 @@ styles; don't add per-feature colors or inline `style` colors.
 A button that only opens the review-before-send page is named "Review …" with
 an ellipsis, not "Send …".
 
-Admin doesn't style a bare `<button>`. `.exit` is currently defined only for the
+Prefer `input[type=submit]`. Admin doesn't style a bare `<button>`, even with
+`class="default"`, and `<button class="button">` renders smaller, so keep that
+for compact controls (Filter, Put back). `.exit` is currently defined only for the
 email pages, in `communications/admin/_email_styles.html`.
 
 ### Email

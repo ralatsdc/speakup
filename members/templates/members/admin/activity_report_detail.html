@@ -65,10 +65,9 @@
             </tbody>
         </table>
         <div class="invite-actions">
-            <button type="submit" class="default" id="invite-button"
-                    {% if not upcoming_exists %}disabled title="No upcoming meetings"{% endif %}>
-                Invite to selected role(s)
-            </button>
+            <input type="submit" class="default" id="invite-button"
+                   value="Review invitation…"
+                   {% if not upcoming_exists %}disabled title="No upcoming meetings"{% endif %}>
         </div>
     </form>
 
@@ -110,7 +109,7 @@
 
     <script src="{% static 'members/admin/sortable_table.js' %}"></script>
     <script>
-        // Enable the single Invite button only when at least one role is checked.
+        // Enable the single review button only when at least one role is checked.
         (function () {
             var form = document.getElementById("invite-form");
             var btn = document.getElementById("invite-button");
